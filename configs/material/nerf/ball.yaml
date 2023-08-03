@@ -3,7 +3,7 @@ name: ball_material
 ####network#####
 network: material
 database_name: nerf/ball
-mesh: data/meshes/ball_shape_true-300000.ply
+mesh: data/meshes/ball_shape-300000.ply
 is_nerf: true
 
 reg_diffuse_light: true
@@ -24,7 +24,7 @@ key_metric_name: psnr
 
 ####dataset#####
 train_dataset_type: dummy
-dataset_dir: your_dataset_dir
+dataset_dir: data/nerf
 train_dataset_cfg:
   database_name: nerf/ball
   dataset_dir:

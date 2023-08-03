@@ -16,7 +16,7 @@ freeze_inv_s_step: 15000
 
 ####dataset#####
 train_dataset_type: dummy
-dataset_dir: your_dataset_dir
+dataset_dir: data/nerf
 train_dataset_cfg:
   database_name: nerf/teapot
 val_set_list:

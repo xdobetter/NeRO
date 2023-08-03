@@ -414,7 +414,9 @@ class NeRFSyntheticDatabase(BaseDatabase):
         _, model_name = database_name.split('/')
         RENDER_ROOT = dataset_dir
         # RENDER_ROOT = '/media/data_nix/yzy/Git_Project/data/nerf_synthetic'
+        print("[I] RENDER_ROOT", RENDER_ROOT) # data/nerf
         self.root = f'{RENDER_ROOT}/{model_name}'
+        print("[I] self.root", self.root) # data/nerf/hotdog
         self.scale_factor = 1.0
 
         splits = ['train', 'test']
@@ -456,8 +458,8 @@ class NeRFSyntheticDatabase(BaseDatabase):
 
         H, W = self.imgs[0].shape[:2]
 
-        camera_angle_x = float(meta['camera_angle_x'])
-        focal = .5 * W / np.tan(.5 * camera_angle_x)
+        camera_angle_x = float(meta['camera_angle_x']) # camera_angle_x的作用
+        focal = .5 * W / np.tan(.5 * camera_angle_x) 
         self.Ks = np.array([
             [focal, 0, 0.5 * W],
             [0, focal, 0.5 * H],
