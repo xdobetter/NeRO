@@ -1,5 +1,5 @@
-# import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '1' #卡7存在问题
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'  # for debug
 import argparse
 
 from train.trainer import Trainer

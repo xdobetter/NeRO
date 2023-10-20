@@ -6,7 +6,7 @@ import h5py
 import torch
 
 import numpy as np
-import pickle
+import pickle # pickle是Python的一个内置模块，用于序列化和反序列化Python对象结构。"序列化"指的是将Python对象转换为字节流，而"反序列化"则是将这些字节流转回原始对象
 
 import yaml
 from numpy import ndarray

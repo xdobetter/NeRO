@@ -1,4 +1,4 @@
-import abc
+import abc # abc模块放置的是python中的抽象基类
 import glob
 import os
 import random
@@ -20,16 +20,16 @@ import imageio
 from utils.pose_utils import look_at_crop
 
 
-class BaseDatabase(abc.ABC):
+class BaseDatabase(abc.ABC): # 用于判定某个对象的类型，例如 instance 函数;强制子类必须实现某些方法，相当于确定ABC类的派生类的基本方法;abc模块放置的是python中的抽象基类
     def __init__(self, database_name):
         self.database_name = database_name
 
     @abc.abstractmethod
-    def get_image(self, img_id):
+    def get_image(self, img_id): # 获得图像
         pass
 
     @abc.abstractmethod
-    def get_K(self, img_id):
+    def get_K(self, img_id): # 获得内参
         pass
 
     @abc.abstractmethod
@@ -43,7 +43,6 @@ class BaseDatabase(abc.ABC):
     @abc.abstractmethod
     def get_depth(self, img_id):
         pass
-
 
 def crop_by_points(img, ref_points, pose, K, size):
     h, w, _ = img.shape
@@ -75,7 +74,6 @@ def crop_by_points(img, ref_points, pose, K, size):
     scale = size / region_size
     img1, K1, pose1, pose_rect, H = look_at_crop(img, K, pose, center, 0, scale, size, size)
     return img1, K1, pose1
-
 
 class GlossyRealDatabase(BaseDatabase):
     meta_info = {
@@ -230,16 +228,15 @@ class GlossyRealDatabase(BaseDatabase):
         h, w, _ = img.shape
         return np.ones([h, w], np.float32), np.ones([h, w], np.bool)
 
-
-class GlossySyntheticDatabase(BaseDatabase):
+class GlossySyntheticDatabase(BaseDatabase): #解析syn的数据集
     def __init__(self, database_name, dataset_dir):
         super().__init__(database_name)
         _, model_name = database_name.split('/')
         RENDER_ROOT = dataset_dir
         self.root = f'{RENDER_ROOT}/{model_name}'
-        self.img_num = len(glob.glob(f'{self.root}/*.pkl'))
+        self.img_num = len(glob.glob(f'{self.root}/*.pkl')) #glob.glob()返回所有匹配的文件路径列表
         self.img_ids = [str(k) for k in range(self.img_num)]
-        self.cams = [read_pickle(f'{self.root}/{k}-camera.pkl') for k in range(self.img_num)]
+        self.cams = [read_pickle(f'{self.root}/{k}-camera.pkl') for k in range(self.img_num)] # 读取相机相关参数
         self.scale_factor = 1.0
 
     def get_image(self, img_id):
@@ -252,7 +249,7 @@ class GlossySyntheticDatabase(BaseDatabase):
     def get_pose(self, img_id):
         pose = self.cams[int(img_id)][0].copy()
         pose = pose.astype(np.float32)
-        pose[:, 3:] *= self.scale_factor
+        pose[:, 3:] *= self.scale_factor # 放缩因子
         return pose
 
     def get_img_ids(self):
@@ -407,7 +404,6 @@ class CustomDatabase(BaseDatabase):
         h, w, _ = img.shape
         return np.ones([h,w],np.float32), np.ones([h, w], np.bool)
 
-
 class NeRFSyntheticDatabase(BaseDatabase):
     def __init__(self, database_name, dataset_dir, testskip=8):
         super().__init__(database_name)
@@ -496,8 +492,7 @@ class NeRFSyntheticDatabase(BaseDatabase):
     def get_mask(self, img_id):
         raise NotImplementedError
 
-
-def parse_database_name(database_name: str, dataset_dir: str) -> BaseDatabase:
+def parse_database_name(database_name: str, dataset_dir: str) -> BaseDatabase: # 实现更多的数据集
     name2database = {
         'syn': GlossySyntheticDatabase,
         'real': GlossyRealDatabase,
@@ -514,9 +509,9 @@ def get_database_split(database: BaseDatabase, split_type='validation'):
     if split_type == 'validation':
         random.seed(6033)
         img_ids = database.get_img_ids()
-        random.shuffle(img_ids)
-        test_ids = img_ids[:1]
-        train_ids = img_ids[1:]
+        random.shuffle(img_ids) # in-place shuffle
+        test_ids = img_ids[:1] # 1张测试
+        train_ids = img_ids[1:] # 剩下训练
     elif split_type=='test':
         test_ids, train_ids = read_pickle('configs/synthetic_split_128.pkl')
     else:

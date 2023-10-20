@@ -43,7 +43,6 @@ class Embedder:
     def embed(self, inputs):
         return torch.cat([fn(inputs) for fn in self.embed_fns], -1)
 
-
 def get_embedder(multires, input_dims=3):
     embed_kwargs = {
         'include_input': True,
@@ -59,7 +58,6 @@ def get_embedder(multires, input_dims=3):
     def embed(x, eo=embedder_obj): return eo.embed(x)
 
     return embed, embedder_obj.out_dim
-
 
 class SDFNetwork(nn.Module):
     def __init__(self,
@@ -99,7 +97,7 @@ class SDFNetwork(nn.Module):
 
             lin = nn.Linear(dims[l], out_dim)
 
-            if geometric_init:
+            if geometric_init: # 初始化几何网络
                 if l == self.num_layers - 2:
                     if not inside_outside:
                         torch.nn.init.normal_(lin.weight, mean=np.sqrt(np.pi) / np.sqrt(dims[l]), std=0.0001)
@@ -184,7 +182,6 @@ class SDFNetwork(nn.Module):
             only_inputs=True)[0]
         return y[..., :1].detach(), gradients.detach()
 
-
 class SingleVarianceNetwork(nn.Module):
     def __init__(self, init_val, activation='exp'):
         super(SingleVarianceNetwork, self).__init__()
@@ -203,7 +200,6 @@ class SingleVarianceNetwork(nn.Module):
 
     def warp(self, x, inv_s):
         return torch.ones([*x.shape[:-1], 1]) * inv_s
-
 
 # This implementation is borrowed from nerf-pytorch: https://github.com/yenchenlin/nerf-pytorch
 class NeRFNetwork(nn.Module):
@@ -253,8 +249,8 @@ class NeRFNetwork(nn.Module):
         #     [nn.Linear(input_ch_views + W, W//2)] + [nn.Linear(W//2, W//2) for i in range(D//2)])
 
         if use_viewdirs:
-            self.feature_linear = nn.Linear(W, W)
-            self.alpha_linear = nn.Linear(W, 1)
+            self.feature_linear = nn.Linear(W, W) 
+            self.alpha_linear = nn.Linear(W, 1) # 分出alpha
             self.rgb_linear = nn.Linear(W // 2, 3)
         else:
             self.output_linear = nn.Linear(W, output_ch)

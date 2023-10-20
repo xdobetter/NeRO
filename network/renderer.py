@@ -18,8 +18,8 @@ from tqdm import trange
 
 def build_imgs_info(database: BaseDatabase, img_ids, is_nerf=False):
     images = [database.get_image(img_id) for img_id in img_ids]
-    poses = [database.get_pose(img_id) for img_id in img_ids]
-    Ks = [database.get_K(img_id) for img_id in img_ids]
+    poses = [database.get_pose(img_id) for img_id in img_ids] #外参
+    Ks = [database.get_K(img_id) for img_id in img_ids] # 内参
 
     images = np.stack(images, 0)
     if is_nerf:
@@ -30,7 +30,7 @@ def build_imgs_info(database: BaseDatabase, img_ids, is_nerf=False):
     Ks = np.stack(Ks, 0).astype(np.float32)
     poses = np.stack(poses, 0).astype(np.float32)
 
-    imgs_info = {
+    imgs_info = { 
         'imgs': images, 
         'Ks': Ks, 
         'poses': poses,
@@ -42,7 +42,7 @@ def build_imgs_info(database: BaseDatabase, img_ids, is_nerf=False):
     return imgs_info
 
 
-def imgs_info_to_torch(imgs_info, device='cpu'):
+def imgs_info_to_torch(imgs_info, device='cpu'): # 转tensor,转device
     for k, v in imgs_info.items():
         v = torch.from_numpy(v)
         if k.startswith('imgs'): v = v.permute(0, 3, 1, 2)
@@ -81,7 +81,7 @@ def imgs_info_downsample(imgs_info, ratio):
     return imgs_info_copy
 
 
-class NeROShapeRenderer(nn.Module):
+class NeROShapeRenderer(nn.Module): # ShapeRenderer
     default_cfg = {
         # standard deviation for opacity density
         'std_net': 'default',
@@ -144,7 +144,7 @@ class NeROShapeRenderer(nn.Module):
                                       geometric_init=self.cfg['geometry_init'],
                                       weight_norm=True, sdf_activation=self.cfg['sdf_activation'])
 
-        self.deviation_network = SingleVarianceNetwork(init_val=self.cfg['inv_s_init'], activation=self.cfg['std_act'])
+        self.deviation_network = SingleVarianceNetwork(init_val=self.cfg['inv_s_init'], activation=self.cfg['std_act']) #?这是什么网络
 
         # background nerf is a nerf++ model (this is outside the unit bounding sphere, so we call it outer nerf)
         self.outer_nerf = NeRFNetwork(D=8, d_in=4, d_in_view=3, W=256, multires=10, multires_view=4, output_ch=4,
@@ -159,7 +159,7 @@ class NeROShapeRenderer(nn.Module):
 
     def _init_dataset(self):
         # train/test split
-        self.database = parse_database_name(self.cfg['database_name'], self.cfg['dataset_dir'])
+        self.database = parse_database_name(self.cfg['database_name'], self.cfg['dataset_dir']) # 调用对应的数据集解析函数
         self.train_ids, self.test_ids = get_database_split(self.database)
         self.train_ids = np.asarray(self.train_ids)
 
@@ -174,7 +174,7 @@ class NeROShapeRenderer(nn.Module):
         self.test_num = len(self.test_ids)
 
         # clean the data if we already have
-        if hasattr(self, 'train_batch'):
+        if hasattr(self, 'train_batch'): # 用于判断对象是否包含对应的属性
             del self.train_batch
 
         self.train_batch, self.train_poses, self.tbn, _, _ = self._construct_nerf_ray_batch(
@@ -189,17 +189,17 @@ class NeROShapeRenderer(nn.Module):
         for k, v in self.train_batch.items():
             self.train_batch[k] = v[shuffle_idxs]
 
-    def _construct_ray_batch(self, imgs_info, device='cpu'):
+    def _construct_ray_batch(self, imgs_info, device='cpu'): # 构建光线
         imn, _, h, w = imgs_info['imgs'].shape
         coords = torch.stack(torch.meshgrid(torch.arange(h), torch.arange(w)), -1)[:, :, (1, 0)]  # h,w,2
-        coords = coords.to(device)
+        coords = coords.to(device) # [h,w,2]
         coords = coords.float()[None, :, :, :].repeat(imn, 1, 1, 1)  # imn,h,w,2
         coords = coords.reshape(imn, h * w, 2)
         coords = torch.cat([coords + 0.5, torch.ones(imn, h * w, 1, dtype=torch.float32, device=device)],
                            2)  # imn,h*w,3
 
         # imn,h*w,3 @ imn,3,3 => imn,h*w,3
-        dirs = coords @ torch.inverse(imgs_info['Ks']).permute(0, 2, 1)
+        dirs = coords @ torch.inverse(imgs_info['Ks']).permute(0, 2, 1) #
         imgs = imgs_info['imgs'].permute(0, 2, 3, 1).reshape(imn, h * w, 3)  # imn,h*w,3
         idxs = torch.arange(imn, dtype=torch.int64, device=device)[:, None, None].repeat(1, h * w, 1)  # imn,h*w,1
         poses = imgs_info['poses']  # imn,3,4

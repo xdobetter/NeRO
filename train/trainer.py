@@ -19,7 +19,7 @@ from utils.dataset_utils import dummy_collate_fn
 
 
 class Trainer:
-    default_cfg = {
+    default_cfg = { #默认配置;它是一个类变量，所有实例共享同一个default_cfg
         "optimizer_type": 'adam',
         "multi_gpus": False,
         "lr_type": "exp_decay",
@@ -33,26 +33,26 @@ class Trainer:
         "val_interval": 10000,
         "save_interval": 500,
         "novel_view_interval": 10000,
-        "worker_num": 8,
-        'random_seed': 6033,
+        "worker_num": 8, # load data 线程数
+        'random_seed': 0, # default:6033
     }
 
-    def _init_dataset(self):
+    def _init_dataset(self): # 设置训练集和验证集
         self.train_set = name2dataset[self.cfg['train_dataset_type']](self.cfg['train_dataset_cfg'], True)
         self.train_set = DataLoader(self.train_set, 1, True, num_workers=self.cfg['worker_num'],
-                                    collate_fn=dummy_collate_fn)
+                                    collate_fn=dummy_collate_fn) # DataLoader返回一个可迭代的对象
         print(f'train set len {len(self.train_set)}')
         self.val_set_list, self.val_set_names = [], []
         dataset_dir = self.cfg['dataset_dir']
-        for val_set_cfg in self.cfg['val_set_list']:
+        for val_set_cfg in self.cfg['val_set_list']: #设置验证集
             name, val_type, val_cfg = val_set_cfg['name'], val_set_cfg['type'], val_set_cfg['cfg']
-            val_set = name2dataset[val_type](val_cfg, False, dataset_dir=dataset_dir)
-            val_set = DataLoader(val_set, 1, False, num_workers=self.cfg['worker_num'], collate_fn=dummy_collate_fn)
+            val_set = name2dataset[val_type](val_cfg, False, dataset_dir=dataset_dir) # val_set是一个Dataset对象
+            val_set = DataLoader(val_set, 1, False, num_workers=self.cfg['worker_num'], collate_fn=dummy_collate_fn) # DataLoader加载数据
             self.val_set_list.append(val_set)
             self.val_set_names.append(name)
             print(f'{name} val set len {len(val_set)}')
 
-    def _init_network(self):
+    def _init_network(self): # 设置网络
         self.network = name2renderer[self.cfg['network']](self.cfg).cuda()
 
         # loss
@@ -89,16 +89,16 @@ class Trainer:
         self.lr_manager = name2lr_manager[self.cfg['lr_type']](self.cfg['lr_cfg'])
         self.optimizer = self.lr_manager.construct_optimizer(self.optimizer, self.network)
 
-    def __init__(self, cfg):
-        self.cfg = {**self.default_cfg, **cfg}
+    def __init__(self, cfg): # 设置相关参数，如模型保存路径，随机种子等
+        self.cfg = {**self.default_cfg, **cfg} # 合并配置，第1个配置是默认配置，第2个cfg来自配置文件yaml
         torch.manual_seed(self.cfg['random_seed'])
         np.random.seed(self.cfg['random_seed'])
         random.seed(self.cfg['random_seed'])
         self.model_name = cfg['name']
         self.model_dir = os.path.join('data/model', cfg['name'])
-        if not os.path.exists(self.model_dir): Path(self.model_dir).mkdir(exist_ok=True, parents=True)
-        self.pth_fn = os.path.join(self.model_dir, 'model.pth')
-        self.best_pth_fn = os.path.join(self.model_dir, 'model_best.pth')
+        if not os.path.exists(self.model_dir): Path(self.model_dir).mkdir(exist_ok=True, parents=True) # 创建该路径的目录，exist_ok表示如果目录存在，就不会抛出异常，parents=True参数表示会创建所有必要的父目录
+        self.pth_fn = os.path.join(self.model_dir, 'model.pth') # 模型保存路径
+        self.best_pth_fn = os.path.join(self.model_dir, 'model_best.pth') # 最佳模型保存路径
 
     def run(self):
         self._init_dataset()
