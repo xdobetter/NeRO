@@ -81,12 +81,12 @@ class SDFNetwork(nn.Module):
         self.embed_fn_fine = None
 
         if multires > 0:
-            embed_fn, input_ch = get_embedder(multires, input_dims=d_in)
+            embed_fn, input_ch = get_embedder(multires, input_dims=d_in) # 
             self.embed_fn_fine = embed_fn
             dims[0] = input_ch
 
-        self.num_layers = len(dims)
-        self.skip_in = skip_in
+        self.num_layers = len(dims) # [39, 256, 256, 256, 256, 256, 256, 256, 256, 257]
+        self.skip_in = skip_in # [4]
         self.scale = scale
 
         for l in range(0, self.num_layers - 1):
@@ -186,7 +186,7 @@ class SingleVarianceNetwork(nn.Module):
     def __init__(self, init_val, activation='exp'):
         super(SingleVarianceNetwork, self).__init__()
         self.act = activation
-        self.register_parameter('variance', nn.Parameter(torch.tensor(init_val)))
+        self.register_parameter('variance', nn.Parameter(torch.tensor(init_val))) # 就是Neus里面的s
 
     def forward(self, x):
         if self.act == 'exp':
@@ -496,7 +496,7 @@ def get_intersection(sdf_fun, inv_fun, pts, dirs, sn0=128, sn1=9):
     return hit_z_vals, hit_weights, hit_sdf
 
 
-class AppShadingNetwork(nn.Module):
+class AppShadingNetwork(nn.Module): # 着色网络
     default_cfg = {
         'human_light': False,
         'sphere_direction': False,

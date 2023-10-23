@@ -8,16 +8,16 @@ class DummyDataset(Dataset):
         'database_name': '',
     }
 
-    def __init__(self, cfg, is_train, dataset_dir=None):
-        self.cfg = {**self.default_cfg, **cfg}
+    def __init__(self, cfg, is_train, dataset_dir=None): # 初始化数据集调用
+        self.cfg = {**self.default_cfg, **cfg} # 更新数据集的配置；
         if not is_train:
-            database = parse_database_name(self.cfg['database_name'], dataset_dir) # database_name表示是哪个数据库，dtaset_dir表示数据库所在的路径
+            database = parse_database_name(self.cfg['database_name'], dataset_dir) # database_name表示是哪类数据，dtaset_dir表示数据所在的路径；针对不同的数据使用不同的数据解析函数
             train_ids, test_ids = get_database_split(database, 'validation') #分割训练集和测试集
             self.train_num = len(train_ids)
             self.test_num = len(test_ids)
         self.is_train = is_train
 
-    def __getitem__(self, index):
+    def __getitem__(self, index):  # 索引/迭代时调用
         if self.is_train:
             return {}
         else:

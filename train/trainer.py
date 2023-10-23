@@ -38,22 +38,22 @@ class Trainer:
     }
 
     def _init_dataset(self): # 设置训练集和验证集
-        self.train_set = name2dataset[self.cfg['train_dataset_type']](self.cfg['train_dataset_cfg'], True)
+        self.train_set = name2dataset[self.cfg['train_dataset_type']](self.cfg['train_dataset_cfg'], True) # 创建train_set
         self.train_set = DataLoader(self.train_set, 1, True, num_workers=self.cfg['worker_num'],
-                                    collate_fn=dummy_collate_fn) # DataLoader返回一个可迭代的对象
+                                    collate_fn=dummy_collate_fn) # 加载train_set;DataLoader返回一个可迭代的对象
         print(f'train set len {len(self.train_set)}')
         self.val_set_list, self.val_set_names = [], []
         dataset_dir = self.cfg['dataset_dir']
-        for val_set_cfg in self.cfg['val_set_list']: #设置验证集
+        for val_set_cfg in self.cfg['val_set_list']: #遍历每种验证集，验证集这里看起来是可以有很多种？
             name, val_type, val_cfg = val_set_cfg['name'], val_set_cfg['type'], val_set_cfg['cfg']
-            val_set = name2dataset[val_type](val_cfg, False, dataset_dir=dataset_dir) # val_set是一个Dataset对象
-            val_set = DataLoader(val_set, 1, False, num_workers=self.cfg['worker_num'], collate_fn=dummy_collate_fn) # DataLoader加载数据
-            self.val_set_list.append(val_set)
+            val_set = name2dataset[val_type](val_cfg, False, dataset_dir=dataset_dir) # 创建val_set
+            val_set = DataLoader(val_set, 1, False, num_workers=self.cfg['worker_num'], collate_fn=dummy_collate_fn) # 加载val_set;
+            self.val_set_list.append(val_set) # 加入一笔验证集资料
             self.val_set_names.append(name)
             print(f'{name} val set len {len(val_set)}')
 
     def _init_network(self): # 设置网络
-        self.network = name2renderer[self.cfg['network']](self.cfg).cuda()
+        self.network = name2renderer[self.cfg['network']](self.cfg).cuda() # 
 
         # loss
         self.val_losses = []
@@ -101,8 +101,8 @@ class Trainer:
         self.best_pth_fn = os.path.join(self.model_dir, 'model_best.pth') # 最佳模型保存路径
 
     def run(self):
-        self._init_dataset()
-        self._init_network()
+        self._init_dataset()  # 初始化数据集
+        self._init_network() # 初始化网络
         self._init_logger()
 
         best_para, start_step = self._load_model()
@@ -145,8 +145,11 @@ class Trainer:
             loss = 0
             for k, v in log_info.items():
                 if k.startswith('loss'):
+                    print(f"[I] {k} v.requires_grad: ", v.requires_grad) # False
                     loss = loss + torch.mean(v)
-
+            # loss.requires_grad_(True) # error method
+            print("[I] loss: ", loss.item())
+            print("[I] loss.requires_grad: ", loss.requires_grad) # False
             loss.backward()
             self.optimizer.step()
             if ((step + 1) % self.cfg['train_log_step']) == 0:

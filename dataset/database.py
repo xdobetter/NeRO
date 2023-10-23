@@ -17,8 +17,8 @@ import open3d as o3d
 import json
 import imageio
 
-from utils.pose_utils import look_at_crop
-
+from utils.pose_utils import look_at_crop,load_K_Rt_from_P
+from utils.dataset_utils import glob_imgs, load_rgb
 
 class BaseDatabase(abc.ABC): # 用于判定某个对象的类型，例如 instance 函数;强制子类必须实现某些方法，相当于确定ABC类的派生类的基本方法;abc模块放置的是python中的抽象基类
     def __init__(self, database_name):
@@ -37,11 +37,11 @@ class BaseDatabase(abc.ABC): # 用于判定某个对象的类型，例如 instan
         pass
 
     @abc.abstractmethod
-    def get_img_ids(self):
+    def get_img_ids(self): # 获得图像id
         pass
 
     @abc.abstractmethod
-    def get_depth(self, img_id):
+    def get_depth(self, img_id): # 获得深度图
         pass
 
 def crop_by_points(img, ref_points, pose, K, size):
@@ -230,10 +230,10 @@ class GlossyRealDatabase(BaseDatabase):
 
 class GlossySyntheticDatabase(BaseDatabase): #解析syn的数据集
     def __init__(self, database_name, dataset_dir):
-        super().__init__(database_name)
-        _, model_name = database_name.split('/')
+        super().__init__(database_name) # 父类的初始化
+        _, model_name = database_name.split('/') # model_name = bell
         RENDER_ROOT = dataset_dir
-        self.root = f'{RENDER_ROOT}/{model_name}'
+        self.root = f'{RENDER_ROOT}/{model_name}' # 'data/GlossySynthetic/bell'
         self.img_num = len(glob.glob(f'{self.root}/*.pkl')) #glob.glob()返回所有匹配的文件路径列表
         self.img_ids = [str(k) for k in range(self.img_num)]
         self.cams = [read_pickle(f'{self.root}/{k}-camera.pkl') for k in range(self.img_num)] # 读取相机相关参数
@@ -443,7 +443,7 @@ class NeRFSyntheticDatabase(BaseDatabase):
             all_imgs.append(imgs)
             all_poses.append(poses)
 
-        i_split = [np.arange(counts[i], counts[i + 1]) for i in range(2)]
+        # i_split = [np.arange(counts[i], counts[i + 1]) for i in range(2)]
 
         self.imgs = np.concatenate(all_imgs, 0)
         self.poses = np.concatenate(all_poses, 0)
@@ -464,7 +464,7 @@ class NeRFSyntheticDatabase(BaseDatabase):
 
     def get_image(self, img_id):
         imgs = self.imgs[int(img_id)]
-        return imgs[..., :3] * imgs[..., -1:] + (1 - imgs[..., -1:])
+        return imgs[..., :3] * imgs[..., -1:] + (1 - imgs[..., -1:]) # 白色背景
         # return imread(f'{self.root}/{img_id}.png')[..., :3]
 
     def get_K(self, img_id):
@@ -492,14 +492,84 @@ class NeRFSyntheticDatabase(BaseDatabase):
     def get_mask(self, img_id):
         raise NotImplementedError
 
+class VolSDFSyntheticDatabase(BaseDatabase):
+    def __init__(self, database_name, dataset_dir, testskip=8):
+        super().__init__(database_name)
+        _, model_name = database_name.split('/')
+        RENDER_ROOT = dataset_dir
+        print("[I] Use VolSDFSyntheticDatabase!")
+        print("[I] RENDER_ROOT", RENDER_ROOT) # data/VolSDF
+        self.root = f'{RENDER_ROOT}/{model_name}'
+        print("[I] self.root", self.root) # data/volsdf/scan24
+        self.scale_factor = 1.0
+        
+        image_paths = sorted(glob_imgs(f'{self.root}/image'))
+        self.img_num = len(image_paths) 
+        self.img_ids = [str(k) for k in range(self.img_num)] 
+        self.cam_file = f'{self.root}/cameras.npz'
+        camera_dict = np.load(self.cam_file)
+        scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.img_num)]
+        world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.img_num)]
+        self.intrinsics_all = []
+        self.pose_all = []
+        for scale_mat,world_mat in zip(scale_mats,world_mats):
+            P = world_mat @ scale_mat
+            P = P[:3,:4]
+            intrinsics,pose = load_K_Rt_from_P(None,P) # 解出内参和外参
+            self.intrinsics_all.append(np.array(intrinsics[:3,:3]).astype(np.float32))
+            self.pose_all.append(np.array(pose[:3,...]).astype(np.float32))
+        
+        self.rgb_images = []
+         
+        for path in image_paths:
+            rgb = load_rgb(path)[...,:3] # ?
+            self.rgb_images.append(rgb)
+        self.imgs = np.array(self.rgb_images).astype(np.float32)  # [49,1200,1600,3]
+        self.poses = np.array(self.pose_all).astype(np.float32) # [49,3,4]
+        self.ks = np.array(self.intrinsics_all).astype(np.float32) # [49,3,3]
+        self.resolution = self.imgs[0].shape[:2] # [1200,1600]
+    
+    def get_image(self, img_id):
+        return self.imgs[int(img_id)].copy()
+        # return imread(f'{self.root}/{img_id}.png')[..., :3]
+
+    def get_K(self, img_id):
+        K = self.ks[int(img_id)].copy()
+        return K
+
+    def get_pose(self, img_id):
+        pose = self.poses[int(img_id)].copy()
+        pose[:,3:] = pose[:,3:] * self.scale_factor
+        return pose
+
+    def get_img_ids(self):
+        return self.img_ids
+
+    def get_depth(self, img_id):
+        assert (self.scale_factor == 1.0)
+        #depth = torch.randn(1200, 1600).cpu().numpy() # 随机生成深度图
+        # depth = imread(f'{self.root}/test/r_{img_id}_depth_0001.png')
+        #depth = depth.astype(np.float32) / 65535 * 15 # 假深度
+        depth = self.imgs[int(img_id)][..., -1] # 假深度
+        mask = self.imgs[int(img_id)][..., -1] # 假mask
+        return depth, mask
+
+    def get_mask(self, img_id):
+        raise NotImplementedError
+
+class NeILFSyntheticDatabase(BaseDatabase):
+    pass
+
 def parse_database_name(database_name: str, dataset_dir: str) -> BaseDatabase: # 实现更多的数据集
     name2database = {
         'syn': GlossySyntheticDatabase,
         'real': GlossyRealDatabase,
         'custom': CustomDatabase,
         'nerf': NeRFSyntheticDatabase,
-    }
-    database_type = database_name.split('/')[0]
+        'volsdf': VolSDFSyntheticDatabase,
+        'neilf':NeILFSyntheticDatabase,
+    } # 构建新的数据集
+    database_type = database_name.split('/')[0] # 分解出对应的数据集类别
     if database_type in name2database:
         return name2database[database_type](database_name, dataset_dir)
     else:
@@ -508,7 +578,7 @@ def parse_database_name(database_name: str, dataset_dir: str) -> BaseDatabase: #
 def get_database_split(database: BaseDatabase, split_type='validation'):
     if split_type == 'validation':
         random.seed(6033)
-        img_ids = database.get_img_ids()
+        img_ids = database.get_img_ids() # [list],128
         random.shuffle(img_ids) # in-place shuffle
         test_ids = img_ids[:1] # 1张测试
         train_ids = img_ids[1:] # 剩下训练
@@ -517,7 +587,6 @@ def get_database_split(database: BaseDatabase, split_type='validation'):
     else:
         raise NotImplementedError
     return train_ids, test_ids
-
 
 def get_database_eval_points(database):
     if isinstance(database, GlossySyntheticDatabase):

@@ -331,3 +331,27 @@ def look_at_crop(img, K, pose, position, angle, scale, h, w):
     pose_rect = np.concatenate([R_new, np.zeros([3, 1])], 1).astype(np.float32)
     pose_new = pose_compose(pose, pose_rect)
     return img_new, K_new, pose_new, pose_rect, H
+
+
+def load_K_Rt_from_P(filename, P=None): # 从P中解出内参和外参
+    if P is None:
+        lines = open(filename).read().splitlines()
+        if len(lines) == 4:
+            lines = lines[1:]
+        lines = [[x[0], x[1], x[2], x[3]] for x in (x.split(" ") for x in lines)]
+        P = np.asarray(lines).astype(np.float32).squeeze()
+
+    out = cv2.decomposeProjectionMatrix(P)
+    K = out[0]
+    R = out[1]
+    t = out[2]
+
+    K = K/K[2,2]
+    intrinsics = np.eye(4) # 单位矩阵
+    intrinsics[:3, :3] = K
+
+    pose = np.eye(4, dtype=np.float32)
+    pose[:3, :3] = R.transpose()
+    pose[:3,3] = (t[:3] / t[3])[:,0]
+
+    return intrinsics, pose

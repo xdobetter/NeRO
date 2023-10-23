@@ -17,7 +17,7 @@ from tqdm import trange
 
 
 def build_imgs_info(database: BaseDatabase, img_ids, is_nerf=False):
-    images = [database.get_image(img_id) for img_id in img_ids]
+    images = [database.get_image(img_id) for img_id in img_ids] # 图像id
     poses = [database.get_pose(img_id) for img_id in img_ids] #外参
     Ks = [database.get_K(img_id) for img_id in img_ids] # 内参
 
@@ -115,7 +115,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
 
         # dataset
         'database_name': 'nerf_synthetic/lego/black_800',
-        'is_nerf': False,
+        'is_nerf': False, # ?针对NeRF数据集的变化
 
         # validation
         'test_downsample_ratio': True,
@@ -142,16 +142,16 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
                                       skip_in=[self.cfg['sdf_n_layers'] // 2], multires=self.cfg['sdf_freq'],
                                       bias=self.cfg['sdf_bias'], scale=1.0,
                                       geometric_init=self.cfg['geometry_init'],
-                                      weight_norm=True, sdf_activation=self.cfg['sdf_activation'])
+                                      weight_norm=True, sdf_activation=self.cfg['sdf_activation']) # SDF网络
 
         self.deviation_network = SingleVarianceNetwork(init_val=self.cfg['inv_s_init'], activation=self.cfg['std_act']) #?这是什么网络
 
         # background nerf is a nerf++ model (this is outside the unit bounding sphere, so we call it outer nerf)
         self.outer_nerf = NeRFNetwork(D=8, d_in=4, d_in_view=3, W=256, multires=10, multires_view=4, output_ch=4,
-                                      skips=[4], use_viewdirs=True)
+                                      skips=[4], use_viewdirs=True) # 这
         nn.init.constant_(self.outer_nerf.rgb_linear.bias, np.log(0.5))
 
-        self.color_network = AppShadingNetwork(self.cfg['shader_config'])
+        self.color_network = AppShadingNetwork(self.cfg['shader_config']) # ?
         self.sdf_inter_fun = lambda x: self.sdf_network.sdf(x)
 
         if training:
@@ -166,7 +166,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         self.train_imgs_info = build_imgs_info(self.database, self.train_ids, self.is_nerf)
         self.train_imgs_info = imgs_info_to_torch(self.train_imgs_info, 'cpu')
         b, _, h, w = self.train_imgs_info['imgs'].shape
-        print(f'training size {h} {w} ...')
+        print(f'[I] training size {h} {w} ...') # 训练图像大小 
         self.train_num = len(self.train_ids)
 
         self.test_imgs_info = build_imgs_info(self.database, self.test_ids, self.is_nerf)
