@@ -3,12 +3,12 @@ name: scan24-test_shape
 ####network#####
 network: shape
 database_name: volsdf/scan24-test
-apply_acc_loss: true
+apply_occ_loss: true
 occ_loss_step: 20000
-is_nerf: false
+clip_sample_variance: false
 
 ######loss######
-loss: ['nerf_render','eikonal','std','init_sdf_reg','occ', 'mask']
+loss: ['nerf_render','eikonal','std','init_sdf_reg','occ']
 val_metric: ['shape_render']
 key_metric_name: psnr
 eikonal_weight: 0.1

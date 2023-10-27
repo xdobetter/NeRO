@@ -41,14 +41,14 @@ class Trainer:
         self.train_set = name2dataset[self.cfg['train_dataset_type']](self.cfg['train_dataset_cfg'], True) # 创建train_set
         self.train_set = DataLoader(self.train_set, 1, True, num_workers=self.cfg['worker_num'],
                                     collate_fn=dummy_collate_fn) # 加载train_set;DataLoader返回一个可迭代的对象
-        print(f'train set len {len(self.train_set)}')
+        print(f'train set len {len(self.train_set)}') # 为什么这里先输出train set len，再输出val set len？
         self.val_set_list, self.val_set_names = [], []
         dataset_dir = self.cfg['dataset_dir']
         for val_set_cfg in self.cfg['val_set_list']: #遍历每种验证集，验证集这里看起来是可以有很多种？
             name, val_type, val_cfg = val_set_cfg['name'], val_set_cfg['type'], val_set_cfg['cfg']
             val_set = name2dataset[val_type](val_cfg, False, dataset_dir=dataset_dir) # 创建val_set
             val_set = DataLoader(val_set, 1, False, num_workers=self.cfg['worker_num'], collate_fn=dummy_collate_fn) # 加载val_set;
-            self.val_set_list.append(val_set) # 加入一笔验证集资料
+            self.val_set_list.append(val_set) # 加入一笔验证集
             self.val_set_names.append(name)
             print(f'{name} val set len {len(val_set)}')
 
@@ -78,7 +78,7 @@ class Trainer:
             self.train_network = self.network
             self.train_losses = self.val_losses
 
-        if self.cfg['optimizer_type'] == 'adam':
+        if self.cfg['optimizer_type'] == 'adam': # 设置优化器
             self.optimizer = Adam
         elif self.cfg['optimizer_type'] == 'sgd':
             self.optimizer = SGD
@@ -87,7 +87,7 @@ class Trainer:
 
         self.val_evaluator = ValidationEvaluator(self.cfg)
         self.lr_manager = name2lr_manager[self.cfg['lr_type']](self.cfg['lr_cfg'])
-        self.optimizer = self.lr_manager.construct_optimizer(self.optimizer, self.network)
+        self.optimizer = self.lr_manager.construct_optimizer(self.optimizer, self.network) # 构建优化器
 
     def __init__(self, cfg): # 设置相关参数，如模型保存路径，随机种子等
         self.cfg = {**self.default_cfg, **cfg} # 合并配置，第1个配置是默认配置，第2个cfg来自配置文件yaml
@@ -100,15 +100,15 @@ class Trainer:
         self.pth_fn = os.path.join(self.model_dir, 'model.pth') # 模型保存路径
         self.best_pth_fn = os.path.join(self.model_dir, 'model_best.pth') # 最佳模型保存路径
 
-    def run(self):
+    def run(self): # train主函数
         self._init_dataset()  # 初始化数据集
-        self._init_network() # 初始化网络
+        self._init_network() # 初始化网络，优化器，损失函数，metrics
         self._init_logger()
 
         best_para, start_step = self._load_model()
-        train_iter = iter(self.train_set)
+        train_iter = iter(self.train_set) # 生成迭代器
 
-        pbar = tqdm(total=self.cfg['total_step'], bar_format='{r_bar}')
+        pbar = tqdm(total=self.cfg['total_step'], bar_format='{r_bar}') # 包含 total 参数指定的总步骤数。进度条的格式由 bar_format 参数指定，其中 {r_bar} 表示进度条本身，即进度条的填充部分
         pbar.update(start_step)
 
         for step in range(start_step, self.cfg['total_step']):
@@ -122,7 +122,7 @@ class Trainer:
                 train_data = to_cuda(train_data)
             train_data['step'] = step
 
-            self.train_network.train()
+            self.train_network.train()  # 调用训练模式；这个train_network和network是同一个东西
             self.network.train()
             lr = self.lr_manager(self.optimizer, step)
 
@@ -146,7 +146,7 @@ class Trainer:
             for k, v in log_info.items():
                 if k.startswith('loss'):
                     print(f"[I] {k} v.requires_grad: ", v.requires_grad) # False
-                    loss = loss + torch.mean(v)
+                    loss = loss + torch.mean(v) # 计算平均值
             # loss.requires_grad_(True) # error method
             print("[I] loss: ", loss.item())
             print("[I] loss.requires_grad: ", loss.requires_grad) # False

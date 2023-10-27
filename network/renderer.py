@@ -17,18 +17,18 @@ from tqdm import trange
 
 
 def build_imgs_info(database: BaseDatabase, img_ids, is_nerf=False):
-    images = [database.get_image(img_id) for img_id in img_ids] # 图像id
+    images = [database.get_image(img_id) for img_id in img_ids] # 图像 [800,800,3]
     poses = [database.get_pose(img_id) for img_id in img_ids] #外参
     Ks = [database.get_K(img_id) for img_id in img_ids] # 内参
 
-    images = np.stack(images, 0)
-    if is_nerf:
+    images = np.stack(images, 0) [124,800,800,3]
+    if is_nerf: # nerf还需要mask
         masks = [database.get_depth(img_id)[1] for img_id in img_ids]
         masks = np.stack(masks, 0)
     else:
         images = color_map_forward(images).astype(np.float32)
-    Ks = np.stack(Ks, 0).astype(np.float32)
-    poses = np.stack(poses, 0).astype(np.float32)
+    Ks = np.stack(Ks, 0).astype(np.float32) # [124,3,3]
+    poses = np.stack(poses, 0).astype(np.float32) # [124,3,4]
 
     imgs_info = { 
         'imgs': images, 
@@ -42,10 +42,10 @@ def build_imgs_info(database: BaseDatabase, img_ids, is_nerf=False):
     return imgs_info
 
 
-def imgs_info_to_torch(imgs_info, device='cpu'): # 转tensor,转device
+def imgs_info_to_torch(imgs_info, device='cpu'): # 转tensor,转device，该函数很强啊
     for k, v in imgs_info.items():
-        v = torch.from_numpy(v)
-        if k.startswith('imgs'): v = v.permute(0, 3, 1, 2)
+        v = torch.from_numpy(v) # 从numpy转tensor
+        if k.startswith('imgs'): v = v.permute(0, 3, 1, 2) # change to NCHW，维度重排
         imgs_info[k] = v.to(device)
     return imgs_info
 
@@ -144,33 +144,33 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
                                       geometric_init=self.cfg['geometry_init'],
                                       weight_norm=True, sdf_activation=self.cfg['sdf_activation']) # SDF网络
 
-        self.deviation_network = SingleVarianceNetwork(init_val=self.cfg['inv_s_init'], activation=self.cfg['std_act']) #?这是什么网络
+        self.deviation_network = SingleVarianceNetwork(init_val=self.cfg['inv_s_init'], activation=self.cfg['std_act']) # 学习转换函数中的参数s
 
         # background nerf is a nerf++ model (this is outside the unit bounding sphere, so we call it outer nerf)
         self.outer_nerf = NeRFNetwork(D=8, d_in=4, d_in_view=3, W=256, multires=10, multires_view=4, output_ch=4,
-                                      skips=[4], use_viewdirs=True) # 这
+                                      skips=[4], use_viewdirs=True) # nerf++的输入是4维
         nn.init.constant_(self.outer_nerf.rgb_linear.bias, np.log(0.5))
 
-        self.color_network = AppShadingNetwork(self.cfg['shader_config']) # ?
-        self.sdf_inter_fun = lambda x: self.sdf_network.sdf(x)
+        self.color_network = AppShadingNetwork(self.cfg['shader_config']) # 各种着色所需信息的预测
+        self.sdf_inter_fun = lambda x: self.sdf_network.sdf(x) # 
 
         if training:
-            self._init_dataset()
+            self._init_dataset() #?为什么这里还要初始化数据集；该数据集用来构建训练数据
 
-    def _init_dataset(self):
+    def _init_dataset(self): # ?和Trainer中的_init_dataset的区别是什么？
         # train/test split
         self.database = parse_database_name(self.cfg['database_name'], self.cfg['dataset_dir']) # 调用对应的数据集解析函数
-        self.train_ids, self.test_ids = get_database_split(self.database)
-        self.train_ids = np.asarray(self.train_ids)
+        self.train_ids, self.test_ids = get_database_split(self.database) # 分割训练集和测试集
+        self.train_ids = np.asarray(self.train_ids) # 变为Numpy数组
 
-        self.train_imgs_info = build_imgs_info(self.database, self.train_ids, self.is_nerf)
-        self.train_imgs_info = imgs_info_to_torch(self.train_imgs_info, 'cpu')
+        self.train_imgs_info = build_imgs_info(self.database, self.train_ids, self.is_nerf) # 构建训练集的所需要的信息
+        self.train_imgs_info = imgs_info_to_torch(self.train_imgs_info, 'cpu') # 转到torch和相应的device
         b, _, h, w = self.train_imgs_info['imgs'].shape
         print(f'[I] training size {h} {w} ...') # 训练图像大小 
         self.train_num = len(self.train_ids)
 
-        self.test_imgs_info = build_imgs_info(self.database, self.test_ids, self.is_nerf)
-        self.test_imgs_info = imgs_info_to_torch(self.test_imgs_info, 'cpu')
+        self.test_imgs_info = build_imgs_info(self.database, self.test_ids, self.is_nerf) # 构建测试集的所需要的信息
+        self.test_imgs_info = imgs_info_to_torch(self.test_imgs_info, 'cpu') # 转到torch和相应的device
         self.test_num = len(self.test_ids)
 
         # clean the data if we already have
@@ -178,31 +178,31 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
             del self.train_batch
 
         self.train_batch, self.train_poses, self.tbn, _, _ = self._construct_nerf_ray_batch(
-            self.train_imgs_info) if self.is_nerf else self._construct_ray_batch(self.train_imgs_info)
-        self.train_poses = self.train_poses.float().cuda()
+            self.train_imgs_info) if self.is_nerf else self._construct_ray_batch(self.train_imgs_info) # 构建训练输入数据，不同数据集的光线生成方式不同
+        self.train_poses = self.train_poses.float().cuda() # [124,3,4]
 
-        self._shuffle_train_batch()
+        self._shuffle_train_batch() # 打乱训练集，打乱所有pixel
 
     def _shuffle_train_batch(self):
         self.train_batch_i = 0
-        shuffle_idxs = torch.randperm(self.tbn, device='cpu')  # shuffle
+        shuffle_idxs = torch.randperm(self.tbn, device='cpu')  # shuffle the training data
         for k, v in self.train_batch.items():
-            self.train_batch[k] = v[shuffle_idxs]
+            self.train_batch[k] = v[shuffle_idxs] # 将打乱的索引应用到训练数据上
 
     def _construct_ray_batch(self, imgs_info, device='cpu'): # 构建光线
-        imn, _, h, w = imgs_info['imgs'].shape
+        imn, _, h, w = imgs_info['imgs'].shape # meshgrid创建一个网络坐标张量，其形状为(h,w,2)。其中，coords的第3个维度的前两个元素分别表示行坐标和列坐标
         coords = torch.stack(torch.meshgrid(torch.arange(h), torch.arange(w)), -1)[:, :, (1, 0)]  # h,w,2
         coords = coords.to(device) # [h,w,2]
-        coords = coords.float()[None, :, :, :].repeat(imn, 1, 1, 1)  # imn,h,w,2
+        coords = coords.float()[None, :, :, :].repeat(imn, 1, 1, 1)  # imn,h,w,2;repeat函数是什么，其各参数如何理解
         coords = coords.reshape(imn, h * w, 2)
         coords = torch.cat([coords + 0.5, torch.ones(imn, h * w, 1, dtype=torch.float32, device=device)],
                            2)  # imn,h*w,3
 
         # imn,h*w,3 @ imn,3,3 => imn,h*w,3
-        dirs = coords @ torch.inverse(imgs_info['Ks']).permute(0, 2, 1) #
+        dirs = coords @ torch.inverse(imgs_info['Ks']).permute(0, 2, 1) #?这个的计算顺序是怎样的？为什么还要去交换维度顺序
         imgs = imgs_info['imgs'].permute(0, 2, 3, 1).reshape(imn, h * w, 3)  # imn,h*w,3
         idxs = torch.arange(imn, dtype=torch.int64, device=device)[:, None, None].repeat(1, h * w, 1)  # imn,h*w,1
-        poses = imgs_info['poses']  # imn,3,4
+        poses = imgs_info['poses']  # imn,3,4;外参
 
         rn = imn * h * w
         ray_batch = {
@@ -212,37 +212,37 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         }
         return ray_batch, poses, rn, h, w
 
-    def _construct_nerf_ray_batch(self, imgs_info, device='cpu', is_train=True):
-        imn, _, h, w = imgs_info['imgs'].shape
+    def _construct_nerf_ray_batch(self, imgs_info, device='cpu', is_train=True): # 构建nerf光线
+        imn, _, h, w = imgs_info['imgs'].shape # 124，3，800，800
 
         i, j = torch.meshgrid(torch.linspace(0, w - 1, w),
                               torch.linspace(0, h - 1, h))  # pytorch's meshgrid has indexing='ij'
-        i = i.t()
+        i = i.t() # 转置
         j = j.t()
 
         K = imgs_info['Ks'][0]
-        dirs = torch.stack([(i - K[0][2]) / K[0][0], -(j - K[1][2]) / K[1][1], -torch.ones_like(i)], -1)
+        dirs = torch.stack([(i - K[0][2]) / K[0][0], -(j - K[1][2]) / K[1][1], -torch.ones_like(i)], -1) # [800,800,3]
 
         imgs = imgs_info['imgs'].permute(0, 2, 3, 1).reshape(imn, h * w, 3)  # imn,h*w,3
         idxs = torch.arange(imn, dtype=torch.int64, device=device)[:, None, None].repeat(1, h * w, 1)  # imn,h*w,1
-        poses = imgs_info['poses']  # imn,3,4
+        poses = imgs_info['poses']  # imn,3,4; [124,3,3]
         if is_train:
-            masks = imgs_info['masks'].reshape(imn, h * w)
+            masks = imgs_info['masks'].reshape(imn, h * w) # [124,640000]
 
-        rays_d = [torch.sum(dirs[..., None, :].cpu() * poses[i, :3, :3], -1) for i in range(imn)]
-        rays_d = torch.stack(rays_d, 0).reshape(imn, h * w, 3)
+        rays_d = [torch.sum(dirs[..., None, :].cpu() * poses[i, :3, :3], -1) for i in range(imn)] # 124-[800,800,3]
+        rays_d = torch.stack(rays_d, 0).reshape(imn, h * w, 3) # [124,640000,3]
         rays_o = [poses[i, :3, -1].expand(rays_d[0].shape) for i in range(imn)]
-        rays_o = torch.stack(rays_o, 0).reshape(imn, h * w, 3)
-        rn = imn * h * w
+        rays_o = torch.stack(rays_o, 0).reshape(imn, h * w, 3) # [124,640000,3]
+        rn = imn * h * w # 79360000
         ray_batch = {
             # 'dirs': dirs.float().reshape(rn, 3).to(device),
-            'rgbs': imgs.float().reshape(rn, 3).to(device),
-            'idxs': idxs.long().reshape(rn, 1).to(device),
-            'rays_o': rays_o.float().reshape(rn, 3).to(device),
-            'rays_d': rays_d.float().reshape(rn, 3).to(device),
-        }
+            'rgbs': imgs.float().reshape(rn, 3).to(device), # [79360000,3]
+            'idxs': idxs.long().reshape(rn, 1).to(device), # [79360000,1]
+            'rays_o': rays_o.float().reshape(rn, 3).to(device), # 
+            'rays_d': rays_d.float().reshape(rn, 3).to(device), # 
+        } # 为什么device是在cpu上呢？; ray_batch 内容不一样
         if is_train:
-            ray_batch['masks'] = masks.float().reshape(rn).to(device)
+            ray_batch['masks'] = masks.float().reshape(rn).to(device) # [79360000]
         return ray_batch, poses, rn, h, w
 
     # def _construct_render_batch(self, imgs_info, device='cpu'):
@@ -302,11 +302,11 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         output_color = np.reshape(np.concatenate(output_color, 0), [h, w, 3])
         return output_color
 
-    def get_anneal_val(self, step):
+    def get_anneal_val(self, step): # 通过使用退火值，可以在训练过程中动态地调整学习率，使模型更好地适应当前的训练数据。这有助于提高模型的性能和泛化能力，并避免训练过程中的不稳定性和震荡
         if self.cfg['anneal_end'] < 0:
             return 1.0
         else:
-            return np.min([1.0, step / self.cfg['anneal_end']])
+            return np.min([1.0, step / self.cfg['anneal_end']]) 
 
     @staticmethod
     def near_far_from_sphere(rays_o, rays_d):
@@ -336,11 +336,11 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         t = -R @ cam_cen[:, :, None]  # pn,3,1
         return torch.cat([R, t], -1)
 
-    def _process_ray_batch(self, ray_batch, poses):
+    def _process_ray_batch(self, ray_batch, poses): # 处理NeRO自身场景的光线
         rays_d = ray_batch['dirs']  # rn,3
         idxs = ray_batch['idxs'][..., 0]  # rn
 
-        rays_o = poses[:, :, :3].permute(0, 2, 1) @ -poses[:, :, 3:]  # trn,3,1
+        rays_o = poses[:, :, :3].permute(0, 2, 1) @ -poses[:, :, 3:]  # trn,3,1 ;计算方式和NeRF中的不一样
         rays_o = rays_o[idxs, :, 0]  # rn,3
         rays_d = poses[idxs, :, :3].permute(0, 2, 1) @ rays_d.unsqueeze(-1)
         rays_d = rays_d[..., 0]  # rn,3
@@ -352,7 +352,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         human_poses = self.get_human_coordinate_poses(poses)
         return rays_o, rays_d, near, far, human_poses[idxs]  # rn, 3, 4
 
-    def _process_nerf_ray_batch(self, ray_batch, poses):
+    def _process_nerf_ray_batch(self, ray_batch, poses): # 处理nerf场景的ray
         # dirs = ray_batch['dirs']  # rn,3
         idxs = ray_batch['idxs'][..., 0]  # rn
         rays_d = ray_batch['rays_d']
@@ -363,7 +363,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         rays_d = F.normalize(rays_d, dim=-1)
         near, far = torch.full((rays_o.shape[0], 1), 1.0), torch.full((rays_o.shape[0], 1), 3.0)
 
-        return rays_o, rays_d, near, far, poses[idxs]  # rn, 3, 4
+        return rays_o, rays_d, near, far, poses[idxs]  # rn, 3, 4;生成对应的光线起点,方向,nera,far
 
     # def _process_render_ray_batch(self, ray_batch, poses):
     #     dirs = ray_batch['dirs']  # rn,3
@@ -441,10 +441,10 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         # fetch to gpu
         train_ray_batch = {k: v[self.train_batch_i:self.train_batch_i + rn].cuda() for k, v in self.train_batch.items()}
         self.train_batch_i += rn
-        if self.train_batch_i + rn >= self.tbn: self._shuffle_train_batch()
-        train_poses = self.train_poses.cuda()
+        if self.train_batch_i + rn >= self.tbn: self._shuffle_train_batch() # 已经遍历过了一遍，再次打乱
+        train_poses = self.train_poses.cuda() # 转cuda
         rays_o, rays_d, near, far, human_poses = self._process_nerf_ray_batch(train_ray_batch, train_poses) \
-            if is_nerf else self._process_ray_batch(train_ray_batch, train_poses)
+            if is_nerf else self._process_ray_batch(train_ray_batch, train_poses) # ?选择使用那种方式生成光线，这里可能会影响;这里为什么还要再生成一次光线呢?
 
         outputs = self.render(rays_o, rays_d, near, far, human_poses, -1, self.get_anneal_val(step), is_train=True,
                               step=step, is_nerf=is_nerf)
@@ -493,7 +493,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
             rgb_loss = torch.sum(F.l1_loss(rgb_pr, rgb_gt, reduction='none'), -1)
         elif self.cfg['rgb_loss'] == 'smooth_l1':
             rgb_loss = torch.sum(F.smooth_l1_loss(rgb_pr, rgb_gt, reduction='none', beta=0.25), -1)
-        elif self.cfg['rgb_loss'] == 'charbonier':
+        elif self.cfg['rgb_loss'] == 'charbonier': # 用于计算两个张量的差的绝对值的平方和的平方根
             epsilon = 0.001
             rgb_loss = torch.sqrt(torch.sum((rgb_gt - rgb_pr) ** 2, dim=-1) + epsilon)
         else:
@@ -514,14 +514,14 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         """
         Up sampling give a fixed inv_s
         """
-        batch_size, n_samples = z_vals.shape
-        pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None]  # n_rays, n_samples, 3
-        radius = torch.linalg.norm(pts, ord=2, dim=-1, keepdim=False)
-        inside_sphere = (radius[:, :-1] < 1.0) | (radius[:, 1:] < 1.0)
-        sdf = sdf.reshape(batch_size, n_samples)
-        prev_sdf, next_sdf = sdf[:, :-1], sdf[:, 1:]
-        prev_z_vals, next_z_vals = z_vals[:, :-1], z_vals[:, 1:]
-        mid_sdf = (prev_sdf + next_sdf) * 0.5
+        batch_size, n_samples = z_vals.shape # [512,64]
+        pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None]  # n_rays, n_samples, 3 [512,64,3]
+        radius = torch.linalg.norm(pts, ord=2, dim=-1, keepdim=False) # [512,64]
+        inside_sphere = (radius[:, :-1] < 1.0) | (radius[:, 1:] < 1.0) # [512,63]
+        sdf = sdf.reshape(batch_size, n_samples) # [512,64]
+        prev_sdf, next_sdf = sdf[:, :-1], sdf[:, 1:] # [512,63];[512,63]
+        prev_z_vals, next_z_vals = z_vals[:, :-1], z_vals[:, 1:] # [512,63];[512,63]
+        mid_sdf = (prev_sdf + next_sdf) * 0.5 # [512,63]
         cos_val = (next_sdf - prev_sdf) / (next_z_vals - prev_z_vals + 1e-5)
 
         prev_cos_val = torch.cat([torch.zeros([batch_size, 1]), cos_val[:, :-1]], dim=-1)
@@ -538,7 +538,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         weights = alpha * torch.cumprod(
             torch.cat([torch.ones([batch_size, 1]), 1. - alpha + 1e-7], -1), -1)[:, :-1]
 
-        z_samples = sample_pdf(z_vals, weights, n_importance, det=True).detach()
+        z_samples = sample_pdf(z_vals, weights, n_importance, det=True).detach() # [512,16]
         return z_samples
 
     def cat_z_vals(self, rays_o, rays_d, z_vals, new_z_vals, sdf, last=False):
@@ -548,55 +548,55 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         z_vals = torch.cat([z_vals, new_z_vals], dim=-1)
         z_vals, index = torch.sort(z_vals, dim=-1)
 
-        if not last:
-            new_sdf = self.sdf_network.sdf(pts.reshape(-1, 3)).reshape(batch_size, n_importance)
-            sdf = torch.cat([sdf, new_sdf], dim=-1)
-            xx = torch.arange(batch_size)[:, None].expand(batch_size, n_samples + n_importance).reshape(-1)
-            index = index.reshape(-1)
-            sdf = sdf[(xx, index)].reshape(batch_size, n_samples + n_importance)
+        if not last: # 
+            new_sdf = self.sdf_network.sdf(pts.reshape(-1, 3)).reshape(batch_size, n_importance) # [512,16]
+            sdf = torch.cat([sdf, new_sdf], dim=-1) # [512,80]
+            xx = torch.arange(batch_size)[:, None].expand(batch_size, n_samples + n_importance).reshape(-1) # [40960]
+            index = index.reshape(-1) # [40960]
+            sdf = sdf[(xx, index)].reshape(batch_size, n_samples + n_importance) # [512,80]
 
         return z_vals, sdf
 
-    def sample_ray(self, rays_o, rays_d, near, far, perturb):
-        n_samples = self.cfg['n_samples']
-        n_bg_samples = self.cfg['n_bg_samples']
-        n_importance = self.cfg['n_importance']
-        up_sample_steps = self.cfg['up_sample_steps']
+    def sample_ray(self, rays_o, rays_d, near, far, perturb): # NeRF这一套采样策略
+        n_samples = self.cfg['n_samples'] # coarse sampling;64
+        n_bg_samples = self.cfg['n_bg_samples'] # 采样背景;32
+        n_importance = self.cfg['n_importance'] # fine sampling;64
+        up_sample_steps = self.cfg['up_sample_steps'] # ?这个采样的作用是什么;4
 
-        # sample points
-        batch_size = len(rays_o)
-        z_vals = torch.linspace(0.0, 1.0, n_samples)  # sn
-        z_vals = near + (far - near) * z_vals[None, :]  # rn,sn
-        z_vals_outside = torch.linspace(1e-3, 1.0 - 1.0 / (n_bg_samples + 1.0), n_bg_samples)
+        # sample points;采样点
+        batch_size = len(rays_o) # 512
+        z_vals = torch.linspace(0.0, 1.0, n_samples)  # sn 
+        z_vals = near + (far - near) * z_vals[None, :]  # rn,sn [512,64]
+        z_vals_outside = torch.linspace(1e-3, 1.0 - 1.0 / (n_bg_samples + 1.0), n_bg_samples) # 采样背景点
 
         if perturb > 0:
-            t_rand = (torch.rand([batch_size, 1]) - 0.5)
-            z_vals = z_vals + t_rand * 2.0 / n_samples
+            t_rand = (torch.rand([batch_size, 1]) - 0.5) # [512,1]
+            z_vals = z_vals + t_rand * 2.0 / n_samples # [512,64]
 
-            mids = .5 * (z_vals_outside[..., 1:] + z_vals_outside[..., :-1])
-            upper = torch.cat([mids, z_vals_outside[..., -1:]], -1)
-            lower = torch.cat([z_vals_outside[..., :1], mids], -1)
-            t_rand = torch.rand([batch_size, z_vals_outside.shape[-1]])
-            z_vals_outside = lower[None, :] + (upper - lower)[None, :] * t_rand
+            mids = .5 * (z_vals_outside[..., 1:] + z_vals_outside[..., :-1]) # [31]
+            upper = torch.cat([mids, z_vals_outside[..., -1:]], -1) # [32]
+            lower = torch.cat([z_vals_outside[..., :1], mids], -1) # [32]
+            t_rand = torch.rand([batch_size, z_vals_outside.shape[-1]]) # [512,1]
+            z_vals_outside = lower[None, :] + (upper - lower)[None, :] * t_rand # [32]
 
-        z_vals_outside = far / torch.flip(z_vals_outside, dims=[-1]) + 1.0 / n_bg_samples
+        z_vals_outside = far / torch.flip(z_vals_outside, dims=[-1]) + 1.0 / n_bg_samples # [512,32]
 
         # Up sample
         with torch.no_grad():
-            pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None]
-            sdf = self.sdf_network.sdf(pts).reshape(batch_size, n_samples)
+            pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None] # 计算每个采样点的位置
+            sdf = self.sdf_network.sdf(pts).reshape(batch_size, n_samples) #计算每个采样点的sdf值;[512,64]
 
             for i in range(up_sample_steps):
                 rn, sn = z_vals.shape
                 if self.cfg['clip_sample_variance']:
-                    inv_s = self.deviation_network(torch.empty([1, 3])).expand(rn, sn - 1)
-                    inv_s = torch.clamp(inv_s, max=64 * 2 ** i)  # prevent too large inv_s
+                    inv_s = self.deviation_network(torch.empty([1, 3])).expand(rn, sn - 1) # [512,63]
+                    inv_s = torch.clamp(inv_s, max=64 * 2 ** i)  # prevent too large inv_s;
                 else:
                     inv_s = torch.ones(rn, sn - 1) * 64 * 2 ** i
-                new_z_vals = self.upsample(rays_o, rays_d, z_vals, sdf, n_importance // up_sample_steps, inv_s)
-                z_vals, sdf = self.cat_z_vals(rays_o, rays_d, z_vals, new_z_vals, sdf, last=(i + 1 == up_sample_steps))
+                new_z_vals = self.upsample(rays_o, rays_d, z_vals, sdf, n_importance // up_sample_steps, inv_s) # [512,16]
+                z_vals, sdf = self.cat_z_vals(rays_o, rays_d, z_vals, new_z_vals, sdf, last=(i + 1 == up_sample_steps)) # 
 
-        z_vals = torch.cat([z_vals, z_vals_outside], -1)
+        z_vals = torch.cat([z_vals, z_vals_outside], -1) # [512,128]
         return z_vals
 
     def render(self, rays_o, rays_d, near, far, human_poses, perturb_overwrite=-1, cos_anneal_ratio=0.0, is_train=True,
@@ -608,7 +608,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         :param far:    rn,1
         :param human_poses:     rn,3,4
         :param perturb_overwrite: set 0 for inference
-        :param cos_anneal_ratio:
+        :param cos_anneal_ratio: # 控制余弦退火学习率调度器的参数
         :param is_train:
         :param step:
         :return:
@@ -616,9 +616,9 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         perturb = self.cfg['perturb']
         if perturb_overwrite >= 0:
             perturb = perturb_overwrite
-        z_vals = self.sample_ray(rays_o, rays_d, near, far, perturb)
+        z_vals = self.sample_ray(rays_o, rays_d, near, far, perturb) # 采样每根光线上的点;[512,160]
         ret = self.render_core(rays_o, rays_d, z_vals, human_poses, cos_anneal_ratio=cos_anneal_ratio, step=step,
-                               is_train=is_train, is_nerf=is_nerf)
+                               is_train=is_train, is_nerf=is_nerf) # 
         return ret
 
     def compute_validation_info(self, z_vals, rays_o, rays_d, weights, human_poses, step):
@@ -672,7 +672,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         alpha = ((p + 1e-5) / (c + 1e-5)).clip(0.0, 1.0)  # [...]
         return alpha, gradients, feature_vector, inv_s, sdf
 
-    def compute_density_alpha(self, points, dists, dirs, nerf):
+    def compute_density_alpha(self, points, dists, dirs, nerf): # 使用的Neus的方式加载
         norm = torch.norm(points, dim=-1, keepdim=True)
         points = torch.cat([points / norm, 1.0 / norm], -1)
         density, color = nerf(points, dirs)  # [...,1] [...,3]
@@ -712,24 +712,24 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
 
     def render_core(self, rays_o, rays_d, z_vals, human_poses, cos_anneal_ratio=0.0, step=None, is_train=True,
                     is_nerf=False):
-        batch_size, n_samples = z_vals.shape
+        batch_size, n_samples = z_vals.shape # [512,160]
 
         # section length in original space
         dists = z_vals[..., 1:] - z_vals[..., :-1]  # rn,sn-1
-        dists = torch.cat([dists, dists[..., -1:]], -1)  # rn,sn
+        dists = torch.cat([dists, dists[..., -1:]], -1)  # rn,sn;[512,160]
         mid_z_vals = z_vals + dists * 0.5
 
-        points = rays_o.unsqueeze(-2) + rays_d.unsqueeze(-2) * mid_z_vals.unsqueeze(-1)
-        inner_mask = torch.norm(points, dim=-1) <= 1.0
-        outer_mask = ~inner_mask
+        points = rays_o.unsqueeze(-2) + rays_d.unsqueeze(-2) * mid_z_vals.unsqueeze(-1) # [512,160,3]
+        inner_mask = torch.norm(points, dim=-1) <= 1.0  # 内部掩码，用于标记在半径为1的单位圆内的点;[512,160]
+        outer_mask = ~inner_mask # [512,160] # ~是Python中的按位取反运算符
 
-        dirs = rays_d.unsqueeze(-2).expand(batch_size, n_samples, 3)
-        human_poses_pt = human_poses.unsqueeze(-3).expand(batch_size, n_samples, 3, 4)
+        dirs = rays_d.unsqueeze(-2).expand(batch_size, n_samples, 3) # [512,160,3]
+        human_poses_pt = human_poses.unsqueeze(-3).expand(batch_size, n_samples, 3, 4) # [512,160,3,4]
         dirs = F.normalize(dirs, dim=-1)
-        alpha, sampled_color = torch.zeros(batch_size, n_samples), torch.zeros(batch_size, n_samples, 3)
+        alpha, sampled_color = torch.zeros(batch_size, n_samples), torch.zeros(batch_size, n_samples, 3)# [512,160];[512,160,3]
 
-        if torch.sum(outer_mask) > 0:
-            if is_nerf:
+        if torch.sum(outer_mask) > 0: # 计算outer_mask
+            if is_nerf: # NeRF下计算方式不同
                 alpha[outer_mask] = torch.zeros_like(alpha[outer_mask])
                 sampled_color[outer_mask] = torch.zeros_like(sampled_color[outer_mask])
             else:
@@ -738,14 +738,14 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
                                                                                           -dirs[outer_mask],
                                                                                           self.outer_nerf)
 
-        if torch.sum(inner_mask) > 0:
+        if torch.sum(inner_mask) > 0: # 计算inner_mask
             alpha[inner_mask], gradients, feature_vector, inv_s, sdf = self.compute_sdf_alpha(points[inner_mask],
                                                                                               dists[inner_mask],
                                                                                               dirs[inner_mask],
                                                                                               cos_anneal_ratio, step)
             sampled_color[inner_mask], occ_info = self.color_network(points[inner_mask], gradients, -dirs[inner_mask],
                                                                      feature_vector, human_poses_pt[inner_mask],
-                                                                     step=step)
+                                                                     step=step) # 着色函数
             # Eikonal loss
             gradient_error = (torch.linalg.norm(gradients, ord=2, dim=-1) - 1.0) ** 2
         else:
@@ -754,7 +754,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         weights = alpha * torch.cumprod(torch.cat([torch.ones([batch_size, 1]), 1. - alpha + 1e-7], -1), -1)[...,
                           :-1]  # rn,sn
         color = (sampled_color * weights[..., None]).sum(dim=1)
-        acc = torch.sum(weights, -1)
+        acc = torch.sum(weights, -1) # [512]; 权重之和
         if is_nerf:
             color = color + (1. - acc[..., None])
 
@@ -772,7 +772,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         if step < 1000:
             mask = torch.norm(points, dim=-1) < 1.2
             outputs['sdf_pts'] = points[mask]
-            outputs['sdf_vals'] = self.sdf_network.sdf(points[mask])[..., 0]
+            outputs['sdf_vals'] = self.sdf_network.sdf(points[mask])[..., 0] # 输出这些点的sdf_val
 
         if self.cfg['apply_occ_loss']:
             # occlusion loss
@@ -788,13 +788,13 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         return outputs
 
     def forward(self, data):
-        torch.set_default_tensor_type('torch.cuda.FloatTensor')
+        torch.set_default_tensor_type('torch.cuda.FloatTensor') # 反复设置默认的张量类型
         is_train = 'eval' not in data
         # is_render = "render" in data  # novel view render
         step = data['step']
 
         if is_train:
-            outputs = self.train_step(step)
+            outputs = self.train_step(step) # ?什么作用呢
         # elif is_render:
         #     outputs = self.render_step(step)
         else:
@@ -1170,6 +1170,6 @@ class NeROMaterialRenderer(nn.Module):
 
 
 name2renderer = {
-    'shape': NeROShapeRenderer,
+    'shape': NeROShapeRenderer, # 调用对应渲染器
     'material': NeROMaterialRenderer,
 }

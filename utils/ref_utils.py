@@ -76,7 +76,7 @@ def generate_ide_fn(deg_view):
     mat = np.zeros((l_max + 1, ml_array.shape[1]))
     for i, (m, l) in enumerate(ml_array.T):
         for k in range(l - m + 1):
-            mat[k, i] = sph_harm_coeff(l, m, k)
+            mat[k, i] = sph_harm_coeff(l, m, k) # 创建球谐函数相关系数矩阵
 
     mat = torch.from_numpy(mat.astype(np.float32)).cuda()
     ml_array = torch.from_numpy(ml_array.astype(np.float32)).cuda()

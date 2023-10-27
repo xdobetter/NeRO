@@ -14,7 +14,7 @@ class ValidationEvaluator:
     def __init__(self, cfg):
         self.cfg = {**self.default_cfg, **cfg}
         self.key_metric_name = cfg['key_metric_name']
-        self.key_metric = name2key_metrics[self.key_metric_name]
+        self.key_metric = name2key_metrics[self.key_metric_name] # psnr
 
     def __call__(self, model, losses, eval_dataset, step, model_name, val_set_name=None):
         if val_set_name is not None: model_name = f'{model_name}-{val_set_name}'

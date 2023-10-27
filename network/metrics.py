@@ -41,7 +41,7 @@ def draw_materials(data_pr, h, w):
     return results
 
 
-class ShapeRenderMetrics(Loss):
+class ShapeRenderMetrics(Loss): # Loss是一个类，ShapeRenderMetrics是Loss的子类;这个Metrics类是用来计算损失的
     def __init__(self, cfg):
         pass
 
@@ -73,7 +73,7 @@ class ShapeRenderMetrics(Loss):
         model_name = kwargs['model_name']
         output_path = Path(f'data/train_vis/{model_name}')
         output_path.mkdir(exist_ok=True, parents=True)
-        imsave(f'{str(output_path)}/{step}-index-{data_index}.jpg', concat_images_list(*imgs, vert=True))
+        imsave(f'{str(output_path)}/{step}-index-{data_index}.jpg', concat_images_list(*imgs, vert=True)) # 输出可视化图像
         return outputs
 
 

@@ -8,7 +8,7 @@ class LearningRateManager(abc.ABC):
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
-    def construct_optimizer(self, optimizer, network):
+    def construct_optimizer(self, optimizer, network): # 构建优化器
         # may specify different lr for different parts
         # use group to set learning rate
         paras = network.parameters()
@@ -31,7 +31,7 @@ class WarmUpCosLR(LearningRateManager):
         self.warm_up_end = cfg['end_warm']
         self.learning_rate_alpha = 0.05
         self.end_iter = cfg['end_iter']
-        self.learning_rate = cfg['lr']
+        self.learning_rate = cfg['lr'] # 0.0005
 
     def __call__(self, optimizer, step, *args, **kwargs):
         if step < self.warm_up_end:

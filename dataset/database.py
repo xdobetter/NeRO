@@ -406,16 +406,18 @@ class CustomDatabase(BaseDatabase):
 
 class NeRFSyntheticDatabase(BaseDatabase):
     def __init__(self, database_name, dataset_dir, testskip=8):
-        super().__init__(database_name)
+        super().__init__(database_name) # 父类的初始化
         _, model_name = database_name.split('/')
-        RENDER_ROOT = dataset_dir
+        for i in range(10):
+            print("model_name", model_name)
+        RENDER_ROOT = dataset_dir 
         # RENDER_ROOT = '/media/data_nix/yzy/Git_Project/data/nerf_synthetic'
         print("[I] RENDER_ROOT", RENDER_ROOT) # data/nerf
         self.root = f'{RENDER_ROOT}/{model_name}'
         print("[I] self.root", self.root) # data/nerf/hotdog
         self.scale_factor = 1.0
 
-        splits = ['train', 'test']
+        splits = ['train', 'test'] # 加载train,test data
         metas = {}
         for s in splits:
             with open(os.path.join(self.root, 'transforms_{}.json'.format(s)), 'r') as fp:
@@ -429,70 +431,136 @@ class NeRFSyntheticDatabase(BaseDatabase):
             imgs = []
             poses = []
             if s == 'train' or testskip == 0:
-                skip = 1
+                skip = 1 # 图片采样间隔，train data收集所有图片
             else:
-                skip = testskip
+                skip = testskip # 每隔8张读取一张图片
 
             for frame in meta['frames'][::skip]:
                 fname = os.path.join(self.root, frame['file_path'] + '.png')
-                imgs.append(imageio.imread(fname))
-                poses.append(np.array(frame['transform_matrix']))
+                imgs.append(imageio.imread(fname)) # 读取图片 [len,800,800,4]
+                poses.append(np.array(frame['transform_matrix'])) # 读取相机参数 [len,4,4]
             imgs = (np.array(imgs) / 255.).astype(np.float32)  # keep all 4 channels (RGBA)
-            poses = np.array(poses).astype(np.float32)
-            counts.append(counts[-1] + imgs.shape[0])
+            poses = np.array(poses).astype(np.float32) # 默认读取的为uint8，转换为float32
+            counts.append(counts[-1] + imgs.shape[0]) # 图片的数量
             all_imgs.append(imgs)
             all_poses.append(poses)
 
         # i_split = [np.arange(counts[i], counts[i + 1]) for i in range(2)]
 
-        self.imgs = np.concatenate(all_imgs, 0)
-        self.poses = np.concatenate(all_poses, 0)
-        self.poses[..., :3, 3] /= 2
+        self.imgs = np.concatenate(all_imgs, 0) # [125,800,800,4]
+        self.poses = np.concatenate(all_poses, 0) # [125,4,4]
+        self.poses[..., :3, 3] /= 2 
 
         self.img_num = self.imgs.shape[0]
         self.img_ids = [str(k) for k in range(self.img_num)]
 
-        H, W = self.imgs[0].shape[:2]
+        H, W = self.imgs[0].shape[:2] # 800,800
 
-        camera_angle_x = float(meta['camera_angle_x']) # camera_angle_x的作用
-        focal = .5 * W / np.tan(.5 * camera_angle_x) 
+        camera_angle_x = float(meta['camera_angle_x']) # 水平方向的fov
+        focal = .5 * W / np.tan(.5 * camera_angle_x) # 焦距
         self.Ks = np.array([
             [focal, 0, 0.5 * W],
             [0, focal, 0.5 * H],
             [0, 0, 1]
-        ])
+        ]) # 相机内参[3,3]
 
     def get_image(self, img_id):
-        imgs = self.imgs[int(img_id)]
+        imgs = self.imgs[int(img_id)] # [800,800,4]
         return imgs[..., :3] * imgs[..., -1:] + (1 - imgs[..., -1:]) # 白色背景
         # return imread(f'{self.root}/{img_id}.png')[..., :3]
 
     def get_K(self, img_id):
-        K = self.Ks
+        K = self.Ks # 默认为float64
         return K.astype(np.float32)
 
     def get_pose(self, img_id):
-        pose = self.poses[int(img_id)].copy()[:3, :]
+        pose = self.poses[int(img_id)].copy()[:3, :] # [3,4]
         # pose = self.cams[int(img_id)][0].copy()
         pose = pose.astype(np.float32)
-        pose[:, 3:] *= self.scale_factor
+        pose[:, 3:] *= self.scale_factor # 缩放位姿矩阵中的平移部分
         return pose
 
     def get_img_ids(self):
         return self.img_ids
 
-    def get_depth(self, img_id):
+    def get_depth(self, img_id): # NeRF需要mask
         assert (self.scale_factor == 1.0)
-        depth = torch.randn(800, 800).cpu().numpy()
+        depth = torch.randn(800, 800).cpu().numpy() # [800,800]
         # depth = imread(f'{self.root}/test/r_{img_id}_depth_0001.png')
         depth = depth.astype(np.float32) / 65535 * 15
-        mask = self.imgs[int(img_id)][..., -1]
+        mask = self.imgs[int(img_id)][..., -1] # img的alpha通道
         return depth, mask
 
     def get_mask(self, img_id):
         raise NotImplementedError
 
-class VolSDFSyntheticDatabase(BaseDatabase):
+# class VolSDFSyntheticDatabase(BaseDatabase): 
+#     def __init__(self, database_name, dataset_dir, testskip=8):
+#         super().__init__(database_name)
+#         _, model_name = database_name.split('/')
+#         RENDER_ROOT = dataset_dir
+#         print("[I] Use VolSDFSyntheticDatabase!")
+#         print("[I] RENDER_ROOT", RENDER_ROOT) # data/VolSDF
+#         self.root = f'{RENDER_ROOT}/{model_name}'
+#         print("[I] self.root", self.root) # data/volsdf/scan24
+#         self.scale_factor = 1.0
+        
+#         image_paths = sorted(glob_imgs(f'{self.root}/image'))
+#         self.img_num = len(image_paths) 
+#         self.img_ids = [str(k) for k in range(self.img_num)] 
+#         self.cam_file = f'{self.root}/cameras.npz'
+#         camera_dict = np.load(self.cam_file)
+#         scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.img_num)]
+#         world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.img_num)]
+#         self.intrinsics_all = []
+#         self.pose_all = []
+#         for scale_mat,world_mat in zip(scale_mats,world_mats):
+#             P = world_mat @ scale_mat
+#             P = P[:3,:4]
+#             intrinsics,pose = load_K_Rt_from_P(None,P) # 解出内参和外参
+#             self.intrinsics_all.append(np.array(intrinsics[:3,:3]).astype(np.float32))
+#             self.pose_all.append(np.array(pose[:3,...]).astype(np.float32))
+        
+#         self.rgb_images = []
+         
+#         for path in image_paths:
+#             rgb = load_rgb(path)[...,:3] # ?
+#             self.rgb_images.append(rgb)
+#         self.imgs = np.array(self.rgb_images).astype(np.float32)  # [49,1200,1600,3]
+#         self.poses = np.array(self.pose_all).astype(np.float32) # [49,3,4]
+#         self.ks = np.array(self.intrinsics_all).astype(np.float32) # [49,3,3]
+#         self.resolution = self.imgs[0].shape[:2] # [1200,1600]
+    
+#     def get_image(self, img_id):
+#         return self.imgs[int(img_id)].copy()
+#         # return imread(f'{self.root}/{img_id}.png')[..., :3]
+
+#     def get_K(self, img_id):
+#         K = self.ks[int(img_id)].copy()
+#         return K
+
+#     def get_pose(self, img_id):
+#         pose = self.poses[int(img_id)].copy()
+#         pose[:,3:] = pose[:,3:] * self.scale_factor
+#         return pose
+
+#     def get_img_ids(self):
+#         return self.img_ids
+
+#     def get_depth(self, img_id):
+#         assert (self.scale_factor == 1.0)
+#         #depth = torch.randn(1200, 1600).cpu().numpy() # 随机生成深度图
+#         # depth = imread(f'{self.root}/test/r_{img_id}_depth_0001.png')
+#         #depth = depth.astype(np.float32) / 65535 * 15 # 假深度
+#         depth = self.imgs[int(img_id)][..., -1] # 假深度
+#         mask = self.imgs[int(img_id)][..., -1] # 假mask
+#         return depth, mask
+
+#     def get_mask(self, img_id):
+#         raise NotImplementedError
+
+
+class VolSDFSyntheticDatabase(BaseDatabase): 
     def __init__(self, database_name, dataset_dir, testskip=8):
         super().__init__(database_name)
         _, model_name = database_name.split('/')
@@ -557,6 +625,10 @@ class VolSDFSyntheticDatabase(BaseDatabase):
     def get_mask(self, img_id):
         raise NotImplementedError
 
+
+
+
+
 class NeILFSyntheticDatabase(BaseDatabase):
     pass
 
@@ -571,7 +643,7 @@ def parse_database_name(database_name: str, dataset_dir: str) -> BaseDatabase: #
     } # 构建新的数据集
     database_type = database_name.split('/')[0] # 分解出对应的数据集类别
     if database_type in name2database:
-        return name2database[database_type](database_name, dataset_dir)
+        return name2database[database_type](database_name, dataset_dir) # 调用对应数据集解析方法
     else:
         raise NotImplementedError
 

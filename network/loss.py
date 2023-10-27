@@ -11,7 +11,7 @@ class NeRFRenderLoss(Loss):
     def __init__(self, cfg):
         pass
 
-    def __call__(self, data_pr, data_gt, step, *args, **kwargs):
+    def __call__(self, data_pr, data_gt, step, *args, **kwargs): # __call__ 方法会在对一个类的实例对象使用函数调用操作符 () 时被调用
         outputs = {}
         if 'loss_rgb' in data_pr: outputs['loss_rgb'] = data_pr['loss_rgb']
         if 'loss_rgb_fine' in data_pr: outputs['loss_rgb_fine'] = data_pr['loss_rgb_fine']
@@ -67,7 +67,7 @@ class StdRecorder(Loss):
         'apply_std_loss': False,
         'std_loss_weight': 0.05,
         'std_loss_weight_type': 'constant',
-    }
+    } # default_cfg 是一个类属性，它被定义在类的外部而不是 __init__ 方法中，是因为它是一个类共享的默认配置。将 default_cfg 定义为类属性可以确保所有类的实例对象都共享相同的默认配置
 
     def __init__(self, cfg):
         self.cfg = {**self.default_cfg, **cfg}
@@ -86,7 +86,7 @@ class StdRecorder(Loss):
         return outputs
 
 
-class OccLoss(Loss):
+class OccLoss(Loss): # OccLoss是Loss的子类
     default_cfg = {}
 
     def __init__(self, cfg):

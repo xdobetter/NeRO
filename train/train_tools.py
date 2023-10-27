@@ -94,7 +94,7 @@ class Recorder(object):
             f.write(msg + '\n')
 
 
-class Logger:
+class Logger: # 一些train使用到的log函数，方便调试
     def __init__(self, log_dir):
         self.log_dir = log_dir
         self.data = OrderedDict()
