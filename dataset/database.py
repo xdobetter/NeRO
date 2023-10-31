@@ -614,7 +614,6 @@ class VolSDFSyntheticDatabase(BaseDatabase):
         # depth = imread(f'{self.root}/test/r_{img_id}_depth_0001.png')
         # depth = depth.astype(np.float32) / 65535 * 15 # 假深度
         depth = self.imgs[int(img_id)][..., -1] # 假深度
-        # mask = self.imgs[int(img_id)][..., -1] # 假mask
         return depth
 
     def get_mask(self, img_id):
