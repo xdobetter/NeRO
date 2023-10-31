@@ -53,7 +53,7 @@ class Trainer:
             print(f'{name} val set len {len(val_set)}')
 
     def _init_network(self): # 设置网络
-        self.network = name2renderer[self.cfg['network']](self.cfg).cuda() # 
+        self.network = name2renderer[self.cfg['network']](self.cfg).cuda() # 初始化网络架构的时候，将同时构造训练数据集
 
         # loss
         self.val_losses = []
@@ -100,18 +100,18 @@ class Trainer:
         self.pth_fn = os.path.join(self.model_dir, 'model.pth') # 模型保存路径
         self.best_pth_fn = os.path.join(self.model_dir, 'model_best.pth') # 最佳模型保存路径
 
-    def run(self): # train主函数
-        self._init_dataset()  # 初始化数据集
-        self._init_network() # 初始化网络，优化器，损失函数，metrics
-        self._init_logger()
+    def run(self): # train主函数，涵盖了整体的训练过程
+        self._init_dataset()  # 初始化数据集，这里并没有构造训练数据集，只构造了题目所说的val数据集
+        self._init_network() # 初始化网络，损失函数，metrics，val_evaluator，lr_manager
+        self._init_logger() # 初始化日志
 
         best_para, start_step = self._load_model()
-        train_iter = iter(self.train_set) # 生成迭代器
+        train_iter = iter(self.train_set) # 生成迭代器 ; 在 Python 中，迭代器是一个实现了迭代协议的对象。它可以通过 iter() 函数来创建，该函数接受一个可迭代对象作为参数，并返回一个对应的迭代器对象。迭代器对象可以使用 next() 函数来逐个访问可迭代对象的元素，直到遍历完成
 
         pbar = tqdm(total=self.cfg['total_step'], bar_format='{r_bar}') # 包含 total 参数指定的总步骤数。进度条的格式由 bar_format 参数指定，其中 {r_bar} 表示进度条本身，即进度条的填充部分
         pbar.update(start_step)
 
-        for step in range(start_step, self.cfg['total_step']):
+        for step in range(start_step, self.cfg['total_step']): # 这样可以实现从中间处开始训练
             try:
                 train_data = next(train_iter)
             except StopIteration:
@@ -123,8 +123,8 @@ class Trainer:
             train_data['step'] = step
 
             self.train_network.train()  # 调用训练模式；这个train_network和network是同一个东西
-            self.network.train()
-            lr = self.lr_manager(self.optimizer, step)
+            self.network.train() # 这里是不是重复了啊?这两个不是一个东西吗
+            lr = self.lr_manager(self.optimizer, step) # 计算当前学习率
 
             self.optimizer.zero_grad()
             self.train_network.zero_grad()
@@ -146,7 +146,9 @@ class Trainer:
             for k, v in log_info.items():
                 if k.startswith('loss'):
                     print(f"[I] {k} v.requires_grad: ", v.requires_grad) # False
+                    print("[I] v: ", torch.mean(v).item())
                     loss = loss + torch.mean(v) # 计算平均值
+                    
             # loss.requires_grad_(True) # error method
             print("[I] loss: ", loss.item())
             print("[I] loss.requires_grad: ", loss.requires_grad) # False
@@ -206,7 +208,7 @@ class Trainer:
             'optimizer_state_dict': self.optimizer.state_dict(),
         }, save_fn)
 
-    def _init_logger(self):
+    def _init_logger(self): # 控制log的输出
         self.logger = Logger(self.model_dir)
 
     def _log_data(self, results, step, prefix='train', verbose=False):

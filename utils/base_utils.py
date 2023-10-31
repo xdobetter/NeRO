@@ -316,7 +316,7 @@ def compute_precision_recall_np(pr, gt, eps=1e-5):
     return precision, recall, f1
 
 
-def load_cfg(path):
+def load_cfg(path): # 加载配置文件yaml
     with open(path, 'r') as f:
         return yaml.load(f, Loader=yaml.FullLoader)
 

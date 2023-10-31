@@ -186,9 +186,9 @@ class SingleVarianceNetwork(nn.Module):
     def __init__(self, init_val, activation='exp'):
         super(SingleVarianceNetwork, self).__init__()
         self.act = activation
-        self.register_parameter('variance', nn.Parameter(torch.tensor(init_val))) # 就是Neus里面的s
+        self.register_parameter('variance', nn.Parameter(torch.tensor(init_val))) # 就是Neus里面的s;register_parameter用于将一个nn.Parameter对象注册为模型的可训练参数。在PyTorch中，可训练参数是需要在训练过程中进行梯度更新的张量;将一个名为variance的nn.Parameter对象注册为模型的可训练参数。该参数的初始值由torch.tensor(init_val)指定，其中init_val是传入模型构造函数的参数
 
-    def forward(self, x):
+    def forward(self, x): # 用于控制变化范围和速度
         if self.act == 'exp':
             return torch.ones([*x.shape[:-1], 1]) * torch.exp(self.variance * 10.0)
         elif self.act == 'linear':
@@ -198,7 +198,7 @@ class SingleVarianceNetwork(nn.Module):
         else:
             raise NotImplementedError
 
-    def warp(self, x, inv_s):
+    def warp(self, x, inv_s): # 将SDF的值乘以s的倒数，从而实现SDF的缩放
         return torch.ones([*x.shape[:-1], 1]) * inv_s
 
 # This implementation is borrowed from nerf-pytorch: https://github.com/yenchenlin/nerf-pytorch

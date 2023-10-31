@@ -21,13 +21,15 @@ def build_imgs_info(database: BaseDatabase, img_ids, is_nerf=False):
     poses = [database.get_pose(img_id) for img_id in img_ids] #外参
     Ks = [database.get_K(img_id) for img_id in img_ids] # 内参
 
-    images = np.stack(images, 0) [124,800,800,3]
+    images = np.stack(images, 0) # [124,800,800,3]
     if is_nerf: # nerf还需要mask
         masks = [database.get_depth(img_id)[1] for img_id in img_ids]
         masks = np.stack(masks, 0)
     else:
-        images = color_map_forward(images).astype(np.float32)
-    Ks = np.stack(Ks, 0).astype(np.float32) # [124,3,3]
+        images = color_map_forward(images).astype(np.float32) # 非NeRF数据集，需要转换颜色空间
+    # print("[I] Ks.shape:",Ks.shape)
+    Ks = np.stack(Ks, 0).astype(np.float32) # [124,3,3];从列表改成np数组
+    # print("[I] poses.shape:",poses.shape)
     poses = np.stack(poses, 0).astype(np.float32) # [124,3,4]
 
     imgs_info = { 
@@ -154,7 +156,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         self.color_network = AppShadingNetwork(self.cfg['shader_config']) # 各种着色所需信息的预测
         self.sdf_inter_fun = lambda x: self.sdf_network.sdf(x) # 
 
-        if training:
+        if training: # 这里才是对训练数据的初始化;之前是在train_dataset.py中调用的初始化dataset，两者不一样
             self._init_dataset() #?为什么这里还要初始化数据集；该数据集用来构建训练数据
 
     def _init_dataset(self): # ?和Trainer中的_init_dataset的区别是什么？
@@ -178,8 +180,8 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
             del self.train_batch
 
         self.train_batch, self.train_poses, self.tbn, _, _ = self._construct_nerf_ray_batch(
-            self.train_imgs_info) if self.is_nerf else self._construct_ray_batch(self.train_imgs_info) # 构建训练输入数据，不同数据集的光线生成方式不同
-        self.train_poses = self.train_poses.float().cuda() # [124,3,4]
+            self.train_imgs_info) if self.is_nerf else self._construct_ray_batch(self.train_imgs_info) # 构建训练输入数据，不同数据集的光线生成方式不同，NeRF使用的是单独的一套;train_batch是训练的所有数据，train_poses是外参，tbn是总的像素点数
+        self.train_poses = self.train_poses.float().cuda() # [rnm,3,4]
 
         self._shuffle_train_batch() # 打乱训练集，打乱所有pixel
 
@@ -187,24 +189,30 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         self.train_batch_i = 0
         shuffle_idxs = torch.randperm(self.tbn, device='cpu')  # shuffle the training data
         for k, v in self.train_batch.items():
-            self.train_batch[k] = v[shuffle_idxs] # 将打乱的索引应用到训练数据上
+            self.train_batch[k] = v[shuffle_idxs] # 将打乱的索引应用到训练数据上；这里是批量的改变索引
 
-    def _construct_ray_batch(self, imgs_info, device='cpu'): # 构建光线
+    def _construct_ray_batch(self, imgs_info, device='cpu'): # 构建生成光线所需的数据集合
         imn, _, h, w = imgs_info['imgs'].shape # meshgrid创建一个网络坐标张量，其形状为(h,w,2)。其中，coords的第3个维度的前两个元素分别表示行坐标和列坐标
-        coords = torch.stack(torch.meshgrid(torch.arange(h), torch.arange(w)), -1)[:, :, (1, 0)]  # h,w,2
+        #coords = torch.stack(torch.meshgrid(torch.arange(h), torch.arange(w)), -1)[:, :, (1, 0)]  # [h,w,2];生成每个像素点的坐标
+        coords = torch.meshgrid(torch.arange(h),torch.arange(w))
+        coords = torch.stack(coords,-1)
+        coords = coords[:,:,(1,0)] #交换坐标
         coords = coords.to(device) # [h,w,2]
-        coords = coords.float()[None, :, :, :].repeat(imn, 1, 1, 1)  # imn,h,w,2;repeat函数是什么，其各参数如何理解
-        coords = coords.reshape(imn, h * w, 2)
+        coords = coords.float()[None, :, :, :].repeat(imn, 1, 1, 1)  # [imn,h,w,2];None是用来扩展维度，默认扩展为1维;repeat是将原来的数据复制多份,这里表示维度1复制imn份，其余维度复制1
+        coords = coords.reshape(imn, h * w, 2) # [imn,h*w,2]
         coords = torch.cat([coords + 0.5, torch.ones(imn, h * w, 1, dtype=torch.float32, device=device)],
-                           2)  # imn,h*w,3
+                           2)  # [imn,h*w,3]
 
-        # imn,h*w,3 @ imn,3,3 => imn,h*w,3
-        dirs = coords @ torch.inverse(imgs_info['Ks']).permute(0, 2, 1) #?这个的计算顺序是怎样的？为什么还要去交换维度顺序
-        imgs = imgs_info['imgs'].permute(0, 2, 3, 1).reshape(imn, h * w, 3)  # imn,h*w,3
-        idxs = torch.arange(imn, dtype=torch.int64, device=device)[:, None, None].repeat(1, h * w, 1)  # imn,h*w,1
-        poses = imgs_info['poses']  # imn,3,4;外参
+        # imn,h*w,3 @ imn,3,3 => imn,h*w,3;从相机坐标系转换到世界坐标系;先计算内参矩阵的逆矩阵，然后对逆矩阵进行维度重排，最后将坐标信息与逆矩阵相乘
+        # dirs = coords @ torch.inverse(imgs_info['Ks']).permute(0, 2, 1) # [imn,h*w,3]
+        dirs = torch.inverse(imgs_info['Ks']) # [4,3,3]
+        dirs = dirs.permute(0,2,1) # 这里相当于是转置transpose，将1，2维度进行交换;permute的作用是把m×n×c，改成n×m×c或c×n×m等任意组合
+        dirs = coords @ dirs # [4,1920000,3]
+        imgs = imgs_info['imgs'].permute(0, 2, 3, 1).reshape(imn, h * w, 3)  # [4,1920000,3];先改维度，再reshape
+        idxs = torch.arange(imn, dtype=torch.int64, device=device)[:, None, None].repeat(1, h * w, 1)  # [imn,h*w,1]
+        poses = imgs_info['poses']  # [imn,3,4] ;外参
 
-        rn = imn * h * w
+        rn = imn * h * w # 总的像素点数
         ray_batch = {
             'dirs': dirs.float().reshape(rn, 3).to(device),
             'rgbs': imgs.float().reshape(rn, 3).to(device),
@@ -309,12 +317,12 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
             return np.min([1.0, step / self.cfg['anneal_end']]) 
 
     @staticmethod
-    def near_far_from_sphere(rays_o, rays_d):
-        a = torch.sum(rays_d ** 2, dim=-1, keepdim=True)
-        b = 2.0 * torch.sum(rays_o * rays_d, dim=-1, keepdim=True)
-        mid = 0.5 * (-b) / a
-        near = mid - 1.0
-        far = mid + 1.0
+    def near_far_from_sphere(rays_o, rays_d): # 在球体与光线相交的情况下，可以使用光线的原点和方向来计算交点。为了计算交点，需要解方程组，其中方程组的一个方程是球体的方程，另一个方程是光线的参数方程
+        a = torch.sum(rays_d ** 2, dim=-1, keepdim=True) # [512,1];在最后一个维度上进行求和，并保持维度不变;[1]
+        b = 2.0 * torch.sum(rays_o * rays_d, dim=-1, keepdim=True) # [512,1];[4.4129]
+        mid = 0.5 * (-b) / a # [-2.2075]
+        near = mid - 1.0 # [-3.2075]
+        far = mid + 1.0 # [-1.2075]
         near = torch.clamp(near, min=1e-3)
         return near, far
 
@@ -336,20 +344,20 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         t = -R @ cam_cen[:, :, None]  # pn,3,1
         return torch.cat([R, t], -1)
 
-    def _process_ray_batch(self, ray_batch, poses): # 处理NeRO自身场景的光线
-        rays_d = ray_batch['dirs']  # rn,3
-        idxs = ray_batch['idxs'][..., 0]  # rn
+    def _process_ray_batch(self, ray_batch, poses): # 生成NeRO自身场景的光线
+        rays_d = ray_batch['dirs']  # [rn,3]
+        idxs = ray_batch['idxs'][..., 0]  # [rn];表示每个ray对应的图像id
 
-        rays_o = poses[:, :, :3].permute(0, 2, 1) @ -poses[:, :, 3:]  # trn,3,1 ;计算方式和NeRF中的不一样
-        rays_o = rays_o[idxs, :, 0]  # rn,3
-        rays_d = poses[idxs, :, :3].permute(0, 2, 1) @ rays_d.unsqueeze(-1)
-        rays_d = rays_d[..., 0]  # rn,3
+        rays_o = poses[:, :, :3].permute(0, 2, 1) @ -poses[:, :, 3:]  # [4,3,4]
+        rays_o = rays_o[idxs, :, 0]  # [rn,3]
+        rays_d = poses[idxs, :, :3].permute(0, 2, 1) @ rays_d.unsqueeze(-1) # [rn,3,1]
+        rays_d = rays_d[..., 0]  # [rn,3]
 
-        rays_o = rays_o
-        rays_d = F.normalize(rays_d, dim=-1)
-        near, far = self.near_far_from_sphere(rays_o, rays_d)
+        rays_o = rays_o # ?
+        rays_d = F.normalize(rays_d, dim=-1) # [rn,3]
+        near, far = self.near_far_from_sphere(rays_o, rays_d) # near=0.0010,far=-1.2075
 
-        human_poses = self.get_human_coordinate_poses(poses)
+        human_poses = self.get_human_coordinate_poses(poses) # [rn,3,4]
         return rays_o, rays_d, near, far, human_poses[idxs]  # rn, 3, 4
 
     def _process_nerf_ray_batch(self, ray_batch, poses): # 处理nerf场景的ray
@@ -436,15 +444,15 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         return outputs
 
     def train_step(self, step):
-        rn = self.cfg['train_ray_num']
+        rn = self.cfg['train_ray_num'] # 默认采512根光线
         is_nerf = self.is_nerf
         # fetch to gpu
-        train_ray_batch = {k: v[self.train_batch_i:self.train_batch_i + rn].cuda() for k, v in self.train_batch.items()}
+        train_ray_batch = {k: v[self.train_batch_i:self.train_batch_i + rn].cuda() for k, v in self.train_batch.items()} # 选择一部分数据，并将其存储到 train_ray_batch 字典中
         self.train_batch_i += rn
         if self.train_batch_i + rn >= self.tbn: self._shuffle_train_batch() # 已经遍历过了一遍，再次打乱
         train_poses = self.train_poses.cuda() # 转cuda
         rays_o, rays_d, near, far, human_poses = self._process_nerf_ray_batch(train_ray_batch, train_poses) \
-            if is_nerf else self._process_ray_batch(train_ray_batch, train_poses) # ?选择使用那种方式生成光线，这里可能会影响;这里为什么还要再生成一次光线呢?
+            if is_nerf else self._process_ray_batch(train_ray_batch, train_poses) # ?不同数据集使用不同的光线生成方式，所以NeRF的光线生成方式和作者的以及VolSDF的会差别很多吗？理解上感觉都是一致的
 
         outputs = self.render(rays_o, rays_d, near, far, human_poses, -1, self.get_anneal_val(step), is_train=True,
                               step=step, is_nerf=is_nerf)
@@ -541,7 +549,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         z_samples = sample_pdf(z_vals, weights, n_importance, det=True).detach() # [512,16]
         return z_samples
 
-    def cat_z_vals(self, rays_o, rays_d, z_vals, new_z_vals, sdf, last=False):
+    def cat_z_vals(self, rays_o, rays_d, z_vals, new_z_vals, sdf, last=False): # 拼接z值
         batch_size, n_samples = z_vals.shape
         _, n_importance = new_z_vals.shape
         pts = rays_o[:, None, :] + rays_d[:, None, :] * new_z_vals[..., :, None]
@@ -566,8 +574,8 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         # sample points;采样点
         batch_size = len(rays_o) # 512
         z_vals = torch.linspace(0.0, 1.0, n_samples)  # sn 
-        z_vals = near + (far - near) * z_vals[None, :]  # rn,sn [512,64]
-        z_vals_outside = torch.linspace(1e-3, 1.0 - 1.0 / (n_bg_samples + 1.0), n_bg_samples) # 采样背景点
+        z_vals = near + (far - near) * z_vals[None, :]  #  [rn,sn]
+        z_vals_outside = torch.linspace(1e-3, 1.0 - 1.0 / (n_bg_samples + 1.0), n_bg_samples) # 采样背景点;[32]
 
         if perturb > 0:
             t_rand = (torch.rand([batch_size, 1]) - 0.5) # [512,1]
@@ -577,16 +585,16 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
             upper = torch.cat([mids, z_vals_outside[..., -1:]], -1) # [32]
             lower = torch.cat([z_vals_outside[..., :1], mids], -1) # [32]
             t_rand = torch.rand([batch_size, z_vals_outside.shape[-1]]) # [512,1]
-            z_vals_outside = lower[None, :] + (upper - lower)[None, :] * t_rand # [32]
+            z_vals_outside = lower[None, :] + (upper - lower)[None, :] * t_rand # [512,32]
 
         z_vals_outside = far / torch.flip(z_vals_outside, dims=[-1]) + 1.0 / n_bg_samples # [512,32]
 
         # Up sample
         with torch.no_grad():
-            pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None] # 计算每个采样点的位置
+            pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None] # 计算每个采样点的位置;[512,64,3]
             sdf = self.sdf_network.sdf(pts).reshape(batch_size, n_samples) #计算每个采样点的sdf值;[512,64]
 
-            for i in range(up_sample_steps):
+            for i in range(up_sample_steps): # 每次上采样为+16
                 rn, sn = z_vals.shape
                 if self.cfg['clip_sample_variance']:
                     inv_s = self.deviation_network(torch.empty([1, 3])).expand(rn, sn - 1) # [512,63]
@@ -715,9 +723,9 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         batch_size, n_samples = z_vals.shape # [512,160]
 
         # section length in original space
-        dists = z_vals[..., 1:] - z_vals[..., :-1]  # rn,sn-1
+        dists = z_vals[..., 1:] - z_vals[..., :-1]  # rn,sn-1;[512,159]
         dists = torch.cat([dists, dists[..., -1:]], -1)  # rn,sn;[512,160]
-        mid_z_vals = z_vals + dists * 0.5
+        mid_z_vals = z_vals + dists * 0.5 # [512,160]
 
         points = rays_o.unsqueeze(-2) + rays_d.unsqueeze(-2) * mid_z_vals.unsqueeze(-1) # [512,160,3]
         inner_mask = torch.norm(points, dim=-1) <= 1.0  # 内部掩码，用于标记在半径为1的单位圆内的点;[512,160]

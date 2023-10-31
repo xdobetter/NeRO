@@ -32,7 +32,7 @@ def set_seed(index, is_train):
         random.seed(index % (2 ** 16) + 1)
         torch.random.manual_seed(index % (2 ** 16) + 1)
 
-def glob_imgs(path):
+def glob_imgs(path): # 抓取所有的图片
     imgs = []
     for ext in ['*.png', '*.jpg', '*.JPEG', '*.JPG']:
         imgs.extend(glob.glob(os.path.join(path, ext))) # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值

@@ -98,7 +98,7 @@ class Logger: # 一些train使用到的log函数，方便调试
     def __init__(self, log_dir):
         self.log_dir = log_dir
         self.data = OrderedDict()
-        self.writer = SummaryWriter(log_dir=log_dir)
+        self.writer = SummaryWriter(log_dir=log_dir) # tensorboard
 
     def log(self, data, prefix='train', step=None, verbose=False):
         msg = f'{prefix} '
@@ -134,7 +134,7 @@ def overwrite_configs(cfg_base: dict, cfg: dict):
     return cfg_base
 
 
-def to_cuda(data):
+def to_cuda(data): # 针对不同数据类型，将其转换为cuda上
     if type(data) == list:
         results = []
         for i, item in enumerate(data):

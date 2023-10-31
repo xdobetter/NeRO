@@ -571,7 +571,7 @@ class VolSDFSyntheticDatabase(BaseDatabase):
         print("[I] self.root", self.root) # data/volsdf/scan24
         self.scale_factor = 1.0
         
-        image_paths = sorted(glob_imgs(f'{self.root}/image'))
+        image_paths = sorted(glob_imgs(f'{self.root}/image')) # 抓取所有的img
         self.img_num = len(image_paths) 
         self.img_ids = [str(k) for k in range(self.img_num)] 
         self.cam_file = f'{self.root}/cameras.npz'
@@ -586,11 +586,10 @@ class VolSDFSyntheticDatabase(BaseDatabase):
             intrinsics,pose = load_K_Rt_from_P(None,P) # 解出内参和外参
             self.intrinsics_all.append(np.array(intrinsics[:3,:3]).astype(np.float32))
             self.pose_all.append(np.array(pose[:3,...]).astype(np.float32))
-        
         self.rgb_images = []
          
         for path in image_paths:
-            rgb = load_rgb(path)[...,:3] # ?
+            rgb = imread(path)[..., :3]
             self.rgb_images.append(rgb)
         self.imgs = np.array(self.rgb_images).astype(np.float32)  # [49,1200,1600,3]
         self.poses = np.array(self.pose_all).astype(np.float32) # [49,3,4]
@@ -598,29 +597,25 @@ class VolSDFSyntheticDatabase(BaseDatabase):
         self.resolution = self.imgs[0].shape[:2] # [1200,1600]
     
     def get_image(self, img_id):
-        return self.imgs[int(img_id)].copy()
-        # return imread(f'{self.root}/{img_id}.png')[..., :3]
+        return self.imgs[int(img_id)].copy().astype(np.float32)
 
     def get_K(self, img_id):
-        K = self.ks[int(img_id)].copy()
-        return K
-
+        return self.ks[int(img_id)].copy().astype(np.float32)
+    
     def get_pose(self, img_id):
-        pose = self.poses[int(img_id)].copy()
-        pose[:,3:] = pose[:,3:] * self.scale_factor
-        return pose
-
+        return self.poses[int(img_id)].copy().astype(np.float32)
+    
     def get_img_ids(self):
         return self.img_ids
 
     def get_depth(self, img_id):
         assert (self.scale_factor == 1.0)
-        #depth = torch.randn(1200, 1600).cpu().numpy() # 随机生成深度图
+        # depth = torch.randn(1200, 1600).cpu().numpy() # 随机生成深度图
         # depth = imread(f'{self.root}/test/r_{img_id}_depth_0001.png')
-        #depth = depth.astype(np.float32) / 65535 * 15 # 假深度
+        # depth = depth.astype(np.float32) / 65535 * 15 # 假深度
         depth = self.imgs[int(img_id)][..., -1] # 假深度
-        mask = self.imgs[int(img_id)][..., -1] # 假mask
-        return depth, mask
+        # mask = self.imgs[int(img_id)][..., -1] # 假mask
+        return depth
 
     def get_mask(self, img_id):
         raise NotImplementedError
