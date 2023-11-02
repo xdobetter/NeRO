@@ -145,13 +145,13 @@ class Trainer:
             loss = 0
             for k, v in log_info.items():
                 if k.startswith('loss'):
-                    print(f"[I] {k} v.requires_grad: ", v.requires_grad) # False
-                    print("[I] v: ", torch.mean(v).item())
+                    # print(f"[I] {k} v.requires_grad: ", v.requires_grad) # False
+                    # print("[I] v: ", torch.mean(v).item())
                     loss = loss + torch.mean(v) # 计算平均值
                     
             # loss.requires_grad_(True) # error method
-            print("[I] loss: ", loss.item())
-            print("[I] loss.requires_grad: ", loss.requires_grad) # False
+            # print("[I] loss: ", loss.item())
+            # print("[I] loss.requires_grad: ", loss.requires_grad) # False
             loss.backward()
             self.optimizer.step()
             if ((step + 1) % self.cfg['train_log_step']) == 0:

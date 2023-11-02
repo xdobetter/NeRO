@@ -246,7 +246,7 @@ class GlossySyntheticDatabase(BaseDatabase): #解析syn的数据集
         K = self.cams[int(img_id)][1]
         return K.astype(np.float32)
 
-    def get_pose(self, img_id):
+    def get_pose(self, img_id): # c2w，将相机坐标系下的点转换到世界坐标系下
         pose = self.cams[int(img_id)][0].copy()
         pose = pose.astype(np.float32)
         pose[:, 3:] *= self.scale_factor # 放缩因子
@@ -560,12 +560,12 @@ class NeRFSyntheticDatabase(BaseDatabase):
 #         raise NotImplementedError
 
 
-class VolSDFSyntheticDatabase(BaseDatabase): 
+class DTUDatabase(BaseDatabase): 
     def __init__(self, database_name, dataset_dir, testskip=8):
         super().__init__(database_name)
         _, model_name = database_name.split('/')
         RENDER_ROOT = dataset_dir
-        print("[I] Use VolSDFSyntheticDatabase!")
+        print("[I] Use DTUDatabase!")
         print("[I] RENDER_ROOT", RENDER_ROOT) # data/VolSDF
         self.root = f'{RENDER_ROOT}/{model_name}'
         print("[I] self.root", self.root) # data/volsdf/scan24
@@ -583,7 +583,7 @@ class VolSDFSyntheticDatabase(BaseDatabase):
         for scale_mat,world_mat in zip(scale_mats,world_mats):
             P = world_mat @ scale_mat
             P = P[:3,:4]
-            intrinsics,pose = load_K_Rt_from_P(None,P) # 解出内参和外参
+            intrinsics,pose = load_K_Rt_from_P(None,P) # 解出内参和pose(c2w)
             self.intrinsics_all.append(np.array(intrinsics[:3,:3]).astype(np.float32))
             self.pose_all.append(np.array(pose[:3,...]).astype(np.float32))
         self.rgb_images = []
@@ -610,11 +610,12 @@ class VolSDFSyntheticDatabase(BaseDatabase):
 
     def get_depth(self, img_id):
         assert (self.scale_factor == 1.0)
-        # depth = torch.randn(1200, 1600).cpu().numpy() # 随机生成深度图
+        depth = torch.randn(1200, 1600).cpu().numpy() # 随机生成深度图
         # depth = imread(f'{self.root}/test/r_{img_id}_depth_0001.png')
         # depth = depth.astype(np.float32) / 65535 * 15 # 假深度
         depth = self.imgs[int(img_id)][..., -1] # 假深度
-        return depth
+        mask = depth
+        return depth,mask
 
     def get_mask(self, img_id):
         raise NotImplementedError
@@ -632,7 +633,7 @@ def parse_database_name(database_name: str, dataset_dir: str) -> BaseDatabase: #
         'real': GlossyRealDatabase,
         'custom': CustomDatabase,
         'nerf': NeRFSyntheticDatabase,
-        'volsdf': VolSDFSyntheticDatabase,
+        'dtu': DTUDatabase,
         'neilf':NeILFSyntheticDatabase,
     } # 构建新的数据集
     database_type = database_name.split('/')[0] # 分解出对应的数据集类别
