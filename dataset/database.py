@@ -566,9 +566,9 @@ class DTUDatabase(BaseDatabase):
         _, model_name = database_name.split('/')
         RENDER_ROOT = dataset_dir
         print("[I] Use DTUDatabase!")
-        print("[I] RENDER_ROOT", RENDER_ROOT) # data/VolSDF
+        print("[I] RENDER_ROOT", RENDER_ROOT) # data/dtu
         self.root = f'{RENDER_ROOT}/{model_name}'
-        print("[I] self.root", self.root) # data/volsdf/scan24
+        print("[I] self.root", self.root) # data/dtu/scan24
         self.scale_factor = 1.0
         
         image_paths = sorted(glob_imgs(f'{self.root}/image')) # 抓取所有的img
@@ -610,7 +610,7 @@ class DTUDatabase(BaseDatabase):
 
     def get_depth(self, img_id):
         assert (self.scale_factor == 1.0)
-        depth = torch.randn(1200, 1600).cpu().numpy() # 随机生成深度图
+        # depth = torch.randn(1200, 1600).cpu().numpy() # 随机生成深度图
         # depth = imread(f'{self.root}/test/r_{img_id}_depth_0001.png')
         # depth = depth.astype(np.float32) / 65535 * 15 # 假深度
         depth = self.imgs[int(img_id)][..., -1] # 假深度
@@ -627,6 +627,11 @@ class DTUDatabase(BaseDatabase):
 class NeILFSyntheticDatabase(BaseDatabase):
     pass
 
+
+class BlenderMVSDatabase(BaseDatabase):
+    pass
+
+
 def parse_database_name(database_name: str, dataset_dir: str) -> BaseDatabase: # 实现更多的数据集
     name2database = {
         'syn': GlossySyntheticDatabase,
@@ -634,6 +639,7 @@ def parse_database_name(database_name: str, dataset_dir: str) -> BaseDatabase: #
         'custom': CustomDatabase,
         'nerf': NeRFSyntheticDatabase,
         'dtu': DTUDatabase,
+        'blendermvs':BlenderMVSDatabase, 
         'neilf':NeILFSyntheticDatabase,
     } # 构建新的数据集
     database_type = database_name.split('/')[0] # 分解出对应的数据集类别
