@@ -18,7 +18,7 @@ from tqdm import trange
 
 def build_imgs_info(database: BaseDatabase, img_ids, is_nerf=False):
     images = [database.get_image(img_id) for img_id in img_ids] # 图像 [800,800,3]
-    poses = [database.get_pose(img_id) for img_id in img_ids] #外参
+    poses = [database.get_pose(img_id) for img_id in img_ids] # 这里作者谈到是w2c，w2c实际上就是外参，是世界坐标系到相机坐标系的转换矩阵
     Ks = [database.get_K(img_id) for img_id in img_ids] # 内参
 
     images = np.stack(images, 0) # [124,800,800,3]
@@ -203,13 +203,13 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         coords = torch.cat([coords + 0.5, torch.ones(imn, h * w, 1, dtype=torch.float32, device=device)],
                            2)  # [imn,h*w,3]
 
-        # imn,h*w,3 @ imn,3,3 => imn,h*w,3;从相机坐标系转换到世界坐标系;先计算内参矩阵的逆矩阵，然后对逆矩阵进行维度重排，最后将坐标信息与逆矩阵相乘
+        # imn,h*w,3 @ imn,3,3 => imn,h*w,3;
         # dirs = coords @ torch.inverse(imgs_info['Ks']).permute(0, 2, 1) # [imn,h*w,3]
         dirs = torch.inverse(imgs_info['Ks']) # [4,3,3]
         dirs = dirs.permute(0,2,1) # 这里相当于是转置transpose，将1，2维度进行交换;permute的作用是把m×n×c，改成n×m×c或c×n×m等任意组合
         dirs = coords @ dirs # [4,1920000,3]
         imgs = imgs_info['imgs'].permute(0, 2, 3, 1).reshape(imn, h * w, 3)  # [4,1920000,3];先改维度，再reshape
-        idxs = torch.arange(imn, dtype=torch.int64, device=device)[:, None, None].repeat(1, h * w, 1)  # [imn,h*w,1]
+        idxs = torch.arange(imn, dtype=torch.int64, device=device)[:, None, None].repeat(1, h * w, 1)  # [imn,h*w,1];可用来获取每张图像的每个pixel
         poses = imgs_info['poses']  # [imn,3,4] ;外参
 
         rn = imn * h * w # 总的像素点数
@@ -348,9 +348,9 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         rays_d = ray_batch['dirs']  # [rn,3]
         idxs = ray_batch['idxs'][..., 0]  # [rn];表示每个ray对应的图像id
 
-        rays_o = poses[:, :, :3].permute(0, 2, 1) @ -poses[:, :, 3:]  # [4,3,4]
+        rays_o = poses[:, :, :3].permute(0, 2, 1) @ -poses[:, :, 3:]  # ?poses先转置，为什么这里需要转置?再变换原点到世界坐标系?;[4,3,4];
         rays_o = rays_o[idxs, :, 0]  # [rn,3]
-        rays_d = poses[idxs, :, :3].permute(0, 2, 1) @ rays_d.unsqueeze(-1) # [rn,3,1]
+        rays_d = poses[idxs, :, :3].permute(0, 2, 1) @ rays_d.unsqueeze(-1) # ?变换方向到世界坐标系?;[rn,3,1];
         rays_d = rays_d[..., 0]  # [rn,3]
 
         rays_o = rays_o # ?
@@ -452,7 +452,7 @@ class NeROShapeRenderer(nn.Module): # ShapeRenderer
         if self.train_batch_i + rn >= self.tbn: self._shuffle_train_batch() # 已经遍历过了一遍，再次打乱
         train_poses = self.train_poses.cuda() # 转cuda
         rays_o, rays_d, near, far, human_poses = self._process_nerf_ray_batch(train_ray_batch, train_poses) \
-            if is_nerf else self._process_ray_batch(train_ray_batch, train_poses) # ?不同数据集使用不同的光线生成方式，所以NeRF的光线生成方式和作者的以及VolSDF的会差别很多吗？理解上感觉都是一致的
+            if is_nerf else self._process_ray_batch(train_ray_batch, train_poses) # ?不同数据集使用不同的光线生成方；所以NeRF的光线生成方式和作者的以及VolSDF的会差别很多吗？理解上感觉都是一致的
 
         outputs = self.render(rays_o, rays_d, near, far, human_poses, -1, self.get_anneal_val(step), is_train=True,
                               step=step, is_nerf=is_nerf)

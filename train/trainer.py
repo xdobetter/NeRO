@@ -157,7 +157,7 @@ class Trainer:
             if ((step + 1) % self.cfg['train_log_step']) == 0:
                 self._log_data(log_info, step + 1, 'train')
 
-            if (step + 1) % self.cfg['val_interval'] == 0 or (step + 1) == self.cfg['total_step']:
+            if (step + 1) % self.cfg['val_interval'] == 0 or (step + 1) == self.cfg['total_step'] or step==0: # 第0次
                 torch.cuda.empty_cache()
                 val_results = {}
                 val_para = 0

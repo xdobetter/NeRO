@@ -494,72 +494,6 @@ class NeRFSyntheticDatabase(BaseDatabase):
     def get_mask(self, img_id):
         raise NotImplementedError
 
-# class VolSDFSyntheticDatabase(BaseDatabase): 
-#     def __init__(self, database_name, dataset_dir, testskip=8):
-#         super().__init__(database_name)
-#         _, model_name = database_name.split('/')
-#         RENDER_ROOT = dataset_dir
-#         print("[I] Use VolSDFSyntheticDatabase!")
-#         print("[I] RENDER_ROOT", RENDER_ROOT) # data/VolSDF
-#         self.root = f'{RENDER_ROOT}/{model_name}'
-#         print("[I] self.root", self.root) # data/volsdf/scan24
-#         self.scale_factor = 1.0
-        
-#         image_paths = sorted(glob_imgs(f'{self.root}/image'))
-#         self.img_num = len(image_paths) 
-#         self.img_ids = [str(k) for k in range(self.img_num)] 
-#         self.cam_file = f'{self.root}/cameras.npz'
-#         camera_dict = np.load(self.cam_file)
-#         scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.img_num)]
-#         world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.img_num)]
-#         self.intrinsics_all = []
-#         self.pose_all = []
-#         for scale_mat,world_mat in zip(scale_mats,world_mats):
-#             P = world_mat @ scale_mat
-#             P = P[:3,:4]
-#             intrinsics,pose = load_K_Rt_from_P(None,P) # 解出内参和外参
-#             self.intrinsics_all.append(np.array(intrinsics[:3,:3]).astype(np.float32))
-#             self.pose_all.append(np.array(pose[:3,...]).astype(np.float32))
-        
-#         self.rgb_images = []
-         
-#         for path in image_paths:
-#             rgb = load_rgb(path)[...,:3] # ?
-#             self.rgb_images.append(rgb)
-#         self.imgs = np.array(self.rgb_images).astype(np.float32)  # [49,1200,1600,3]
-#         self.poses = np.array(self.pose_all).astype(np.float32) # [49,3,4]
-#         self.ks = np.array(self.intrinsics_all).astype(np.float32) # [49,3,3]
-#         self.resolution = self.imgs[0].shape[:2] # [1200,1600]
-    
-#     def get_image(self, img_id):
-#         return self.imgs[int(img_id)].copy()
-#         # return imread(f'{self.root}/{img_id}.png')[..., :3]
-
-#     def get_K(self, img_id):
-#         K = self.ks[int(img_id)].copy()
-#         return K
-
-#     def get_pose(self, img_id):
-#         pose = self.poses[int(img_id)].copy()
-#         pose[:,3:] = pose[:,3:] * self.scale_factor
-#         return pose
-
-#     def get_img_ids(self):
-#         return self.img_ids
-
-#     def get_depth(self, img_id):
-#         assert (self.scale_factor == 1.0)
-#         #depth = torch.randn(1200, 1600).cpu().numpy() # 随机生成深度图
-#         # depth = imread(f'{self.root}/test/r_{img_id}_depth_0001.png')
-#         #depth = depth.astype(np.float32) / 65535 * 15 # 假深度
-#         depth = self.imgs[int(img_id)][..., -1] # 假深度
-#         mask = self.imgs[int(img_id)][..., -1] # 假mask
-#         return depth, mask
-
-#     def get_mask(self, img_id):
-#         raise NotImplementedError
-
-
 class DTUDatabase(BaseDatabase): 
     def __init__(self, database_name, dataset_dir, testskip=8):
         super().__init__(database_name)
@@ -584,6 +518,8 @@ class DTUDatabase(BaseDatabase):
             P = world_mat @ scale_mat
             P = P[:3,:4]
             intrinsics,pose = load_K_Rt_from_P(None,P) # 解出内参和pose(c2w)
+            # NeRO的pose是w2c
+            pose = pose_inverse(pose) # 转换为w2c
             self.intrinsics_all.append(np.array(intrinsics[:3,:3]).astype(np.float32))
             self.pose_all.append(np.array(pose[:3,...]).astype(np.float32))
         self.rgb_images = []
@@ -620,17 +556,11 @@ class DTUDatabase(BaseDatabase):
     def get_mask(self, img_id):
         raise NotImplementedError
 
-
-
-
-
 class NeILFSyntheticDatabase(BaseDatabase):
     pass
 
-
 class BlenderMVSDatabase(BaseDatabase):
     pass
-
 
 def parse_database_name(database_name: str, dataset_dir: str) -> BaseDatabase: # 实现更多的数据集
     name2database = {

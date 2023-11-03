@@ -75,7 +75,7 @@ class SDFNetwork(nn.Module):
                  sdf_activation='none',
                  layer_activation='softplus'):
         super(SDFNetwork, self).__init__()
-
+        # bias = 0.5
         dims = [d_in] + [d_hidden for _ in range(n_layers)] + [d_out]
 
         self.embed_fn_fine = None

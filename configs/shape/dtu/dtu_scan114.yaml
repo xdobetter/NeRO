@@ -31,7 +31,7 @@ optimizer_type: adam
 lr_type: warm_up_cos
 lr_cfg: {}
 total_step: 300000
-val_interval: 1000
+val_interval: 1
 save_interval: 1000
-train_log_step: 20
+train_log_step: 1
 
