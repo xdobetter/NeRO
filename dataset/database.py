@@ -581,8 +581,8 @@ class DTUDatabase(BaseDatabase):
         self.n_images = len(self.images_list)
         self.img_ids = [str(k) for k in range(self.n_images)]
         self.images_np = np.stack([imread(im_name) for im_name in self.images_list])
-        self.masks_list = sorted(glob.glob(os.path.join(self.data_dir, 'mask/*.png')))
-        self.masks_np = np.stack([imread(im_name) for im_name in self.masks_list])
+        # self.masks_list = sorted(glob.glob(os.path.join(self.data_dir, 'mask/*.png')))
+        # self.masks_np = np.stack([imread(im_name) for im_name in self.masks_list])
 
         # world_mat is a projection matrix from world to image
         self.world_mats_np = [self.camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
