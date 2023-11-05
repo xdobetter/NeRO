@@ -18,7 +18,7 @@ import json
 import imageio
 
 from utils.pose_utils import look_at_crop,load_K_Rt_from_P
-from utils.dataset_utils import glob_imgs, load_rgb
+from utils.dataset_utils import glob_imgs, load_rgb, load_cams_from_sfmscene,load_rgb_image_with_prefix
 
 class BaseDatabase(abc.ABC): # 用于判定某个对象的类型，例如 instance 函数;强制子类必须实现某些方法，相当于确定ABC类的派生类的基本方法;abc模块放置的是python中的抽象基类
     def __init__(self, database_name):
@@ -495,6 +495,9 @@ class NeRFSyntheticDatabase(BaseDatabase):
         raise NotImplementedError
 
 class DTUDatabase(BaseDatabase): 
+    """
+    train NeuS DTU dataset
+    """
     def __init__(self, database_name, dataset_dir, testskip=8):
         super().__init__(database_name)
         _, model_name = database_name.split('/')
@@ -557,7 +560,87 @@ class DTUDatabase(BaseDatabase):
         raise NotImplementedError
 
 class NeILFSyntheticDatabase(BaseDatabase):
-    pass
+    """
+    train paper: NeILF++: Inter-Reflectable Light Fields for Geometry and Material Estimation
+    """
+    def __init__(self, database_name,dataset_dir):
+        super().__init__(database_name)
+        _,model_name = database_name.split('/') # model_name
+        RENDER_ROOT = dataset_dir
+        print("[I] RENDER_ROOT", RENDER_ROOT) # data/NeILF
+        self.root = f'{RENDER_ROOT}/{model_name}' # data/NeILF/hdr_alarm
+        print('[I] use NeILFDataset!')
+        print ('[I] NeILFDataset: loading data from: ' + self.root)
+        self.scale_factor = 1.0
+        
+        # load cameras
+        self.intrinsics,self.extrinsics,self.scale_mat,self.image_list,self.image_indexes,self.image_resolution = \
+            load_cams_from_sfmscene(f'{self.root}/inputs/sfm_scene.json')
+        self.total_pixels = self.image_resolution[0]*self.image_resolution[1]
+        
+        # adjust scale mat
+        def get_scaled_cams(ext, scale_mat):
+            """from NeILF++: Inter-Reflectable Light Fields for Geometry and Material Estimation"""
+            cam_centers = np.stack([(- v[:3,:3].T @ v[:3, 3:])[:,0] for v in ext.values()], axis=0)
+            cam_centers = np.concatenate([cam_centers, np.ones_like(cam_centers[:,:1])], axis=-1)[:,:,None] # [N, 4, 1]
+            scaled_centers = np.linalg.inv(scale_mat)[None,:,:] @ cam_centers
+            scaled_centers = scaled_centers[:,:3,0]
+            dists = np.linalg.norm(scaled_centers, axis=-1) # 计算每个向量的范数
+            return scaled_centers, dists
+        
+        _, dists = get_scaled_cams(self.extrinsics, self.scale_mat) # ?
+        self.max_scaled_cam_dist = dists.max()
+        print(f'max scaled cam dist: {self.max_scaled_cam_dist}')
+        rescale = 2.9
+        if rescale != -1 and dists.max() > rescale: # 为什么要rescale呢?
+            rad_scale = rescale / dists.max()
+            self.scale_mat[range(3),range(3)] /= rad_scale
+            print(f'radius scale: {rad_scale}')
+            _, dists = get_scaled_cams(self.extrinsics, self.scale_mat)
+            print(f'max rescaled cam dist: {dists.max()}')
+        
+        self.img_num = len(self.image_list) # 图像长度
+        self.img_ids = [str(k) for k in range(self.img_num)] # 图像id
+        self.imgs = []
+        
+        # load images
+        for k,v in tqdm(self.image_list.items()):
+            # npos = v.find('.')
+            # path = v[:npos]
+            # rgb_path = os.path.join(self.root,'inputs',path) # 去除图像后缀
+            # rgb = load_rgb_image_with_prefix(rgb_path)
+            rgb_path = os.path.join(self.root,'inputs',v)
+            rgb = imread(rgb_path)[..., :3]
+            self.imgs.append(rgb)
+        
+        # set ks,poses(w2c)
+        self.ks=[v[:3,:3] for k,v in self.intrinsics.items()]
+        self.ks = np.array(self.ks).astype(np.float32)
+        self.poses = [v[:3,:] for k,v in self.extrinsics.items()]
+        self.poses = np.array(self.poses).astype(np.float32)
+            
+
+    def get_image(self, img_id):
+        return self.imgs[int(img_id)].copy().astype(np.float32)
+
+    def get_K(self, img_id):
+        return self.ks[int(img_id)].copy().astype(np.float32)
+
+    def get_pose(self, img_id): # c2w，将相机坐标系下的点转换到世界坐标系下
+        return self.poses[int(img_id)].copy().astype(np.float32)
+
+    def get_img_ids(self):
+        return self.img_ids
+
+    def get_depth(self, img_id):
+        assert (self.scale_factor == 1.0)
+        depth = self.imgs[int(img_id)][...,-1] #假深度
+        mask = depth
+        return depth,mask
+                
+    def get_mask(self, img_id):
+        raise NotImplementedError
+    # pass
 
 class BlenderMVSDatabase(BaseDatabase):
     pass
