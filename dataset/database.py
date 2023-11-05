@@ -494,55 +494,131 @@ class NeRFSyntheticDatabase(BaseDatabase):
     def get_mask(self, img_id):
         raise NotImplementedError
 
-class DTUDatabase(BaseDatabase): 
-    """
-    train NeuS DTU dataset
-    """
+# class DTUDatabase(BaseDatabase): 
+#     """
+#     train NeuS DTU dataset
+#     """
+#     def __init__(self, database_name, dataset_dir, testskip=8):
+#         super().__init__(database_name)
+#         _, model_name = database_name.split('/')
+#         RENDER_ROOT = dataset_dir
+#         print("[I] Use DTUDatabase!")
+#         print("[I] RENDER_ROOT", RENDER_ROOT) # data/dtu
+#         self.root = f'{RENDER_ROOT}/{model_name}'
+#         print("[I] self.root", self.root) # data/dtu/scan24
+#         self.scale_factor = 1.0
+        
+#         image_paths = sorted(glob_imgs(f'{self.root}/image')) # 抓取所有的img
+#         self.img_num = len(image_paths) 
+#         self.img_ids = [str(k) for k in range(self.img_num)] 
+#         self.cam_file = f'{self.root}/cameras.npz'
+#         camera_dict = np.load(self.cam_file)
+#         scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.img_num)]
+#         world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.img_num)]
+#         self.intrinsics_all = []
+#         self.pose_all = []
+#         for scale_mat,world_mat in zip(scale_mats,world_mats):
+#             P = world_mat @ scale_mat
+#             P = P[:3,:4]
+#             intrinsics,pose = load_K_Rt_from_P(None,P) # 解出内参和pose(c2w)
+#             # NeRO的pose是w2c
+#             pose = pose_inverse(pose) # 转换为w2c
+#             self.intrinsics_all.append(np.array(intrinsics[:3,:3]).astype(np.float32))
+#             self.pose_all.append(np.array(pose[:3,...]).astype(np.float32))
+#         self.rgb_images = []
+         
+#         for path in image_paths:
+#             rgb = imread(path)[..., :3]
+#             self.rgb_images.append(rgb)
+#         self.imgs = np.array(self.rgb_images).astype(np.float32)  # [49,1200,1600,3]
+#         self.poses = np.array(self.pose_all).astype(np.float32) # [49,3,4]
+#         self.ks = np.array(self.intrinsics_all).astype(np.float32) # [49,3,3]
+#         self.resolution = self.imgs[0].shape[:2] # [1200,1600]
+    
+#     def get_image(self, img_id):
+#         return self.imgs[int(img_id)].copy().astype(np.float32)
+
+#     def get_K(self, img_id):
+#         return self.ks[int(img_id)].copy().astype(np.float32)
+    
+#     def get_pose(self, img_id):
+#         return self.poses[int(img_id)].copy().astype(np.float32)
+    
+#     def get_img_ids(self):
+#         return self.img_ids
+
+#     def get_depth(self, img_id):
+#         assert (self.scale_factor == 1.0)
+#         # depth = torch.randn(1200, 1600).cpu().numpy() # 随机生成深度图
+#         # depth = imread(f'{self.root}/test/r_{img_id}_depth_0001.png')
+#         # depth = depth.astype(np.float32) / 65535 * 15 # 假深度
+#         depth = self.imgs[int(img_id)][..., -1] # 假深度
+#         mask = depth
+#         return depth,mask
+
+#     def get_mask(self, img_id):
+#         raise NotImplementedError
+
+
+class DTUDatabase(BaseDatabase):
+    """from author"""
+    @staticmethod
+    def get_scale_mat(scan_name):
+        data_dir=f'data/dtu/dtu_scan{scan_name}'
+        render_cameras_name = 'cameras_sphere.npz'
+        camera_dict = np.load(os.path.join(data_dir, render_cameras_name))
+        return camera_dict['scale_mat_%d' % 0].astype(np.float32)
+
     def __init__(self, database_name, dataset_dir, testskip=8):
         super().__init__(database_name)
-        _, model_name = database_name.split('/')
-        RENDER_ROOT = dataset_dir
-        print("[I] Use DTUDatabase!")
-        print("[I] RENDER_ROOT", RENDER_ROOT) # data/dtu
-        self.root = f'{RENDER_ROOT}/{model_name}'
-        print("[I] self.root", self.root) # data/dtu/scan24
+        _, scan_name = database_name.split('/')
+        print('[I] use DTUDataset!')
+        self.data_dir=f'data/dtu/dtu_scan{scan_name}'
+        self.render_cameras_name = 'cameras_sphere.npz'
         self.scale_factor = 1.0
-        
-        image_paths = sorted(glob_imgs(f'{self.root}/image')) # 抓取所有的img
-        self.img_num = len(image_paths) 
-        self.img_ids = [str(k) for k in range(self.img_num)] 
-        self.cam_file = f'{self.root}/cameras.npz'
-        camera_dict = np.load(self.cam_file)
-        scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.img_num)]
-        world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.img_num)]
+        self.camera_dict = np.load(os.path.join(self.data_dir, self.render_cameras_name))
+        self.images_list = sorted(glob.glob(os.path.join(self.data_dir, 'image/*.png')))
+        self.n_images = len(self.images_list)
+        self.img_ids = [str(k) for k in range(self.n_images)]
+        self.images_np = np.stack([imread(im_name) for im_name in self.images_list])
+        self.masks_list = sorted(glob.glob(os.path.join(self.data_dir, 'mask/*.png')))
+        self.masks_np = np.stack([imread(im_name) for im_name in self.masks_list])
+
+        # world_mat is a projection matrix from world to image
+        self.world_mats_np = [self.camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
+
+        self.scale_mats_np = []
+
+        # scale_mat: used for coordinate normalization, we assume the scene to render is inside a unit sphere at origin.
+        self.scale_mats_np = [self.camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
+
         self.intrinsics_all = []
         self.pose_all = []
-        for scale_mat,world_mat in zip(scale_mats,world_mats):
+
+        for scale_mat, world_mat in zip(self.scale_mats_np, self.world_mats_np):
             P = world_mat @ scale_mat
-            P = P[:3,:4]
-            intrinsics,pose = load_K_Rt_from_P(None,P) # 解出内参和pose(c2w)
-            # NeRO的pose是w2c
-            pose = pose_inverse(pose) # 转换为w2c
-            self.intrinsics_all.append(np.array(intrinsics[:3,:3]).astype(np.float32))
-            self.pose_all.append(np.array(pose[:3,...]).astype(np.float32))
-        self.rgb_images = []
-         
-        for path in image_paths:
-            rgb = imread(path)[..., :3]
-            self.rgb_images.append(rgb)
-        self.imgs = np.array(self.rgb_images).astype(np.float32)  # [49,1200,1600,3]
-        self.poses = np.array(self.pose_all).astype(np.float32) # [49,3,4]
-        self.ks = np.array(self.intrinsics_all).astype(np.float32) # [49,3,3]
-        self.resolution = self.imgs[0].shape[:2] # [1200,1600]
-    
+            P = P[:3, :4]
+            intrinsics, pose = load_K_Rt_from_P(None, P)
+            self.intrinsics_all.append(intrinsics[:3,:3])
+            self.pose_all.append(pose_inverse(pose[:3,:4]))
+
+        # self.imgs = torch.from_numpy(self.images_np.astype(np.float32)).cpu()  # [n_images, H, W, 3]
+        # self.masks  = torch.from_numpy(self.masks_np.astype(np.float32)).cpu()  # [n_images, H, W, 1]
+        # self.ks = torch.from_numpy(np.array(self.intrinsics_all).astype(np.float32)).cpu()  # [n_images, 3, 3]
+        # self.poses = torch.from_numpy(np.array(self.pose_all).astype(np.float32)).cpu()  # [n_images, 3, 4]
+        self.imgs = np.array(self.images_np.astype(np.float32))  # [n_images, H, W, 3]
+        self.poses = np.array(self.pose_all).astype(np.float32) # [n_images,3,4]
+        self.ks = np.array(self.intrinsics_all).astype(np.float32) # [n_images,3,3]
+        
+
     def get_image(self, img_id):
-        return self.imgs[int(img_id)].copy().astype(np.float32)
+        return self.imgs[int(img_id)]
 
     def get_K(self, img_id):
-        return self.ks[int(img_id)].copy().astype(np.float32)
+        return self.ks[int(img_id)]
     
     def get_pose(self, img_id):
-        return self.poses[int(img_id)].copy().astype(np.float32)
+        return self.poses[int(img_id)]
     
     def get_img_ids(self):
         return self.img_ids
