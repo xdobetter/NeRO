@@ -1,8 +1,8 @@
-name: dtu_scan114_shape
+name: dtu_scan97_shape
 
 ####network#####
 network: shape
-database_name: dtu/114
+database_name: dtu/97
 apply_occ_loss: true
 occ_loss_step: 20000
 clip_sample_variance: false
@@ -18,13 +18,13 @@ freeze_inv_s_step: 15000
 train_dataset_type: dummy
 dataset_dir: data/dtu
 train_dataset_cfg:
-  database_name: dtu/114
+  database_name: dtu/97
 val_set_list:
   -
     name: val
     type: dummy
     cfg:
-      database_name: dtu/114
+      database_name: dtu/97
 
 ####trainier####
 optimizer_type: adam

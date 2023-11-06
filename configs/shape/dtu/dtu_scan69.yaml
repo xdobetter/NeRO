@@ -1,8 +1,8 @@
-name: dtu_scan122_shape
+name: dtu_scan69_shape
 
 ####network#####
 network: shape
-database_name: dtu/dtu_scan122
+database_name: dtu/69
 apply_occ_loss: true
 occ_loss_step: 20000
 clip_sample_variance: false
@@ -18,20 +18,20 @@ freeze_inv_s_step: 15000
 train_dataset_type: dummy
 dataset_dir: data/dtu
 train_dataset_cfg:
-  database_name: dtu/dtu_scan122
+  database_name: dtu/69
 val_set_list:
   -
     name: val
     type: dummy
     cfg:
-      database_name: dtu/dtu_scan122
+      database_name: dtu/69
 
 ####trainier####
 optimizer_type: adam
 lr_type: warm_up_cos
 lr_cfg: {}
 total_step: 300000
-val_interval: 1000
+val_interval: 5000
 save_interval: 1000
 train_log_step: 20
 

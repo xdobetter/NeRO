@@ -7,7 +7,7 @@ import os
 import imageio 
 import skimage
 import json
-import pyexr
+# import pyexr
 
 def dummy_collate_fn(data_list):
     return data_list[0]
@@ -92,30 +92,32 @@ def load_rgb_image(path):
     ''' 
     from NeILFPP
     Load RGB image (both uint8 and float32) into image in range [0, 1] '''
-    ext = os.path.splitext(path)[1] # 获取文件后缀
-    if ext == '.exr':
-        # NOTE imageio read exr has artifact https://github.com/imageio/imageio/issues/517
-        image = pyexr.read(path)
+    # ext = os.path.splitext(path)[1] # 获取文件后缀
+    # if ext == '.exr':
+    #     # NOTE imageio read exr has artifact https://github.com/imageio/imageio/issues/517
+    #     image = pyexr.read(path)
         
         
-    else:
-        image = imageio.imread(path) # imageio读图像
-    if image.shape[-1] > 3: # 如果是rgba图像,取前三个通道
-        image = image[..., :3]                          # [H, W, 4] -> [H, W ,3]
-    image = skimage.img_as_float32(image)
-    save_iamge = image.copy()
-    pyexr.write('tmp2.exr', save_iamge)
-    return image
+    # else:
+    #     image = imageio.imread(path) # imageio读图像
+    # if image.shape[-1] > 3: # 如果是rgba图像,取前三个通道
+    #     image = image[..., :3]                          # [H, W, 4] -> [H, W ,3]
+    # image = skimage.img_as_float32(image)
+    # save_iamge = image.copy()
+    # pyexr.write('tmp2.exr', save_iamge)
+    # return image
+    pass
 
 
 def load_rgb_image_with_prefix(prefix):
     '''
     from NeILFPP
     Load image using prefix to support different data type '''
-    exts = ['.png', '.jpg', '.tiff', '.exr']
-    for ext in exts:
-        path = prefix + ext
-        if os.path.exists(path):
-            return load_rgb_image(path)
-    print ('Does not exists any image file with prefix: ' + prefix)
-    return None
+    # exts = ['.png', '.jpg', '.tiff', '.exr']
+    # for ext in exts:
+    #     path = prefix + ext
+    #     if os.path.exists(path):
+    #         return load_rgb_image(path)
+    # print ('Does not exists any image file with prefix: ' + prefix)
+    # return None
+    pass
